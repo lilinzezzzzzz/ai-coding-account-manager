@@ -1,0 +1,201 @@
+################################################################################
+# Docker Environment - Data & Logs
+################################################################################
+
+# MySQL
+infras/mysql/data/*
+infras/mysql/logs/*
+
+# Elasticsearch
+infras/elasticsearch/data/*
+
+# Redis
+infras/redis/data/*
+infras/redis/logs/*
+
+# MongoDB
+infras/mongodb/db/*
+infras/mongodb/logs/*
+
+# ClickHouse
+infras/clickhouse/data/*
+infras/clickhouse/logs/*
+
+# Milvus
+infras/milvus/etcd/*
+infras/milvus/minio/*
+infras/milvus/standalone/*
+
+# PostgreSQL
+infras/postgres/data/*
+
+# Docker specific
+*.sdi
+*.log
+
+# Screenshots
+screenshot*.png
+
+################################################################################
+# Python
+################################################################################
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Frameworks
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/
+.webassets-cache
+.scrapy
+
+# Documentation
+docs/_build/
+/site
+
+# PyBuilder
+.pybuilder/
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# Package managers
+.pdm.toml
+.pdm-python
+.pdm-build/
+__pypackages__/
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath
+*.sage.py
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Secrets
+configs/.secrets
+*.pem
+*.key
+.env.local
+.env.*.local
+
+# SSH Keys
+ssh-keys/config
+ssh-keys/id_rsa
+ssh-keys/id_rsa.pub
+ssh-keys/id_ed25519
+ssh-keys/id_ed25519.pub
+ssh-keys/known_hosts
+ssh-keys/known_hosts.old
+
+# Type checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# Cython
+cython_debug/
+
+################################################################################
+# IDEs & Editors
+################################################################################
+
+# macOS Finder
+.DS_Store
+
+# JetBrains (PyCharm, IntelliJ IDEA, etc.)
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# Spyder
+.spyderproject
+.spyproject
+
+# Rope
+.ropeproject
+
+# Qoder
+.qoder/
+.codex
+
+################################################################################
+# VS Code Merged Settings (Auto-generated)
+################################################################################
+development-config/vscode/settings-python.jsonc
+development-config/vscode/settings-golang.jsonc
