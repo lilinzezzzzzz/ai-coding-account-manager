@@ -11,7 +11,8 @@
 - 每个阶段必须有可运行或可验证的交付物。
 - 不把 token、完整 `auth.json`、OAuth URL、session 或 CSRF token 写入数据库、
   日志、前端存储、Git 工作区或 Docker image layer。
-- Handler 只处理 HTTP 边界，业务编排在 service，数据库访问在 repository。
+- Controller 只处理 HTTP 边界，业务编排在 service，GORM 表模型在 model，
+  数据访问、model/entity 转换和持久化错误映射在 DAO。
 - 数据库 schema 以 SQL migration 为唯一事实来源，禁止用 `AutoMigrate` 作为
   正式启动流程。
 - 所有 I/O、app-server、OAuth 和文件操作必须在数据库事务外执行。
@@ -24,7 +25,7 @@
 | 0 | 项目骨架 | Go module、目录、基础命令 | `go test ./...` 可运行 |
 | 1 | HTTP 与静态资源 | `http.Server`、Chi、嵌入页面、health | 原生启动可访问 `/api/health` |
 | 2 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
-| 3 | SQLite/GORM | migration、repository、unit-of-work | 数据库集成测试通过 |
+| 3 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
 | 4 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
 | 5 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
 | 6 | Codex 集成 | app-server client、Codex provider、凭证目录 | 只读协议验证通过 |
@@ -43,9 +44,16 @@
 
 - `go.mod`、`go.sum`
 - `cmd/ai-coding-account-manager/main.go`
+- `frontend/static`
 - `internal/config`
-- `internal/server`
-- `internal/web/static`
+- `internal/router`
+- `internal/controller`
+- `internal/entity`
+- `internal/model`
+- `internal/service`
+- `internal/dao`
+- `internal/infra`
+- `internal/middleware`
 - `tests` 或按 Go 习惯使用包内 `_test.go`
 
 实施要点：
@@ -75,7 +83,7 @@ go vet ./...
 
 交付物：
 
-- `internal/server` 中的 `http.Server` 构造和 shutdown。
+- `internal/router` 中的 `http.Server` 构造、Chi router 和 shutdown。
 - Chi router 注册。
 - `/api/health`。
 - `/` 返回嵌入的 `index.html`，页面只显示服务已启动。
@@ -93,7 +101,7 @@ go vet ./...
 ```bash
 go test ./...
 go vet ./...
-go run ./cmd/ai-coding-account-manager --no-open
+go run ./cmd/ai-coding-account-manager
 ```
 
 阻断条件：
@@ -128,7 +136,7 @@ go run ./cmd/ai-coding-account-manager --no-open
 验证：
 
 ```bash
-go test ./internal/server ./internal/middleware ./internal/security
+go test ./internal/router ./internal/controller ./internal/security
 go test ./...
 ```
 
@@ -145,7 +153,7 @@ go test ./...
 - handler 需要重复实现安全校验。
 - session、CSRF 或 bootstrap token 出现在日志或响应之外的位置。
 
-## 6. Phase 3：SQLite、GORM 与 Repository
+## 6. Phase 3：SQLite、GORM 与 DAO
 
 目标：
 
@@ -153,11 +161,13 @@ go test ./...
 
 交付物：
 
-- `internal/database`。
-- `internal/database/migrations/0001_initial.sql`。
+- `internal/infra/database`。
+- `internal/infra/database/migrations/0001_initial.sql`。
+- `internal/model`。
+- `internal/dao`。
 - GORM 初始化和 PRAGMA 校验。
-- repository persistence model。
-- domain model。
+- GORM persistence model。
+- 业务 entity。
 - unit-of-work。
 - 数据库 quick check 和 schema version 检查。
 
@@ -166,14 +176,15 @@ go test ./...
 - migration SQL 创建 `accounts`、`usage_snapshots`、`schema_migrations`。
 - 使用 `github.com/libtnb/sqlite` 和 GORM。
 - SQLite 连接池限制为单连接。
-- repository 每次调用从 `db.WithContext(ctx)` 派生。
+- DAO 每次调用从 `db.WithContext(ctx)` 派生。
 - 禁止 `Save`、global update、隐式 association save/preload。
-- repository 只返回 domain model 或 domain error，不泄露 GORM model。
+- DAO 负责 model/entity 转换和稳定错误映射，不包含业务规则，也不向 service
+  泄露 GORM model 或底层数据库错误。
 
 验证：
 
 ```bash
-go test ./internal/database ./internal/repository ./internal/service
+go test ./internal/infra/database ./internal/model ./internal/dao ./internal/service
 go test ./...
 ```
 
@@ -191,7 +202,7 @@ go test ./...
 
 - `AutoMigrate` 进入正式启动路径。
 - 事务中执行 app-server、OAuth 或文件 I/O。
-- token 字段进入 schema 或 repository DTO。
+- token 字段进入 schema、persistence model 或 DAO DTO。
 
 ## 7. Phase 4：Provider Contract 与 Fake Provider
 
@@ -203,7 +214,7 @@ go test ./...
 
 - `internal/provider` contract。
 - provider registry。
-- fake provider。
+- `internal/infra/provider/fake`。
 - provider capability。
 - service 对 provider failure isolation 的处理。
 
@@ -217,7 +228,7 @@ go test ./...
 验证：
 
 ```bash
-go test ./internal/provider ./internal/service ./internal/handler
+go test ./internal/provider ./internal/infra/provider/fake ./internal/service ./internal/router
 go test ./...
 ```
 
@@ -230,7 +241,7 @@ go test ./...
 
 目标：
 
-- 在 fake provider 和 repository 基础上实现完整 HTTP API。
+- 在 fake provider 和 DAO 基础上实现完整 HTTP API。
 
 交付物：
 
@@ -256,7 +267,7 @@ go test ./...
 验证：
 
 ```bash
-go test ./internal/handler ./internal/service ./internal/server
+go test ./internal/router ./internal/controller ./internal/service
 go test ./...
 ```
 
@@ -282,8 +293,9 @@ go test ./...
 
 交付物：
 
-- `internal/appserver` JSON-RPC client。
-- `internal/provider/codex`。
+- `internal/infra/appserver` JSON-RPC client。
+- `internal/infra/provider/codex`。
+- `internal/infra/credentials`。
 - Codex CLI 探测。
 - `CODEX_HOME` 隔离启动。
 - `account/read`。
@@ -314,14 +326,14 @@ go test ./...
 验证：
 
 ```bash
-go test ./internal/appserver ./internal/provider/codex ./internal/service
+go test ./internal/infra/appserver ./internal/infra/provider/codex ./internal/infra/credentials ./internal/service
 go test ./...
 ```
 
 本机只读验证：
 
 ```bash
-go run ./cmd/ai-coding-account-manager --no-open
+go run ./cmd/ai-coding-account-manager
 ```
 
 人工验证：
@@ -345,9 +357,9 @@ go run ./cmd/ai-coding-account-manager --no-open
 
 交付物：
 
-- `internal/web/static/index.html`
-- `internal/web/static/app.css`
-- `internal/web/static/app.js`
+- `frontend/static/index.html`
+- `frontend/static/app.css`
+- `frontend/static/app.js`
 - 账号列表和 provider 分组。
 - usage snapshot 展示。
 - import current、login、refresh、activate、rename、delete 操作。
@@ -366,7 +378,7 @@ go run ./cmd/ai-coding-account-manager --no-open
 验证：
 
 ```bash
-go test ./internal/server ./internal/handler
+go test ./internal/router ./internal/controller
 go test ./...
 ```
 
