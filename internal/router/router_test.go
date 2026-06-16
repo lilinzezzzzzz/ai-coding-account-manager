@@ -24,8 +24,8 @@ func TestHealthEndpoint(t *testing.T) {
 	if got := response.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
 		t.Fatalf("Content-Type = %q, want application/json; charset=utf-8", got)
 	}
-	if body := strings.TrimSpace(response.Body.String()); body != `{"status":"ok"}` {
-		t.Fatalf("body = %q, want health JSON", body)
+	if body := strings.TrimSpace(response.Body.String()); body != `{"data":{"status":"ok"},"error":null}` {
+		t.Fatalf("body = %q, want health envelope", body)
 	}
 	assertSecurityHeaders(t, response.Result().Header)
 }
@@ -55,6 +55,38 @@ func TestMissingStaticAsset(t *testing.T) {
 
 	if response.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	assertSecurityHeaders(t, response.Result().Header)
+}
+
+func TestMissingAPIEndpoint(t *testing.T) {
+	handler := newTestHandler(t)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/missing", nil)
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
+	}
+	if body := strings.TrimSpace(response.Body.String()); body != `{"data":null,"error":{"code":"NOT_FOUND","message":"接口不存在"}}` {
+		t.Fatalf("body = %q, want not found envelope", body)
+	}
+	assertSecurityHeaders(t, response.Result().Header)
+}
+
+func TestMethodNotAllowedAPIEndpoint(t *testing.T) {
+	handler := newTestHandler(t)
+
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/health", nil)
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusMethodNotAllowed)
+	}
+	if body := strings.TrimSpace(response.Body.String()); body != `{"data":null,"error":{"code":"METHOD_NOT_ALLOWED","message":"请求方法不支持"}}` {
+		t.Fatalf("body = %q, want method not allowed envelope", body)
 	}
 	assertSecurityHeaders(t, response.Result().Header)
 }

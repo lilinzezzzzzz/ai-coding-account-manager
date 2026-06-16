@@ -1,8 +1,9 @@
 package controller
 
 import (
-	"encoding/json"
 	"net/http"
+
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/transport/httpapi"
 )
 
 type healthResponse struct {
@@ -19,11 +20,5 @@ func NewHealthController() HealthController {
 
 // Show 返回当前服务健康状态。
 func (HealthController) Show(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
-}
-
-func writeJSON(w http.ResponseWriter, statusCode int, value any) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(value)
+	httpapi.WriteOK(w, healthResponse{Status: "ok"})
 }
