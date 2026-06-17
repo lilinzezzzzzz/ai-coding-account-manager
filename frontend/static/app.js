@@ -56,12 +56,19 @@ async function createAccount(providerId) {
 
 async function refreshAccountUsage(account) {
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
+    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
       method: "POST",
       body: {},
     });
+    // 直接更新对应账号的 usage 信息，避免重新加载所有数据
+    const index = state.accounts.findIndex(
+      (a) => a.providerId === account.providerId && a.accountId === account.accountId
+    );
+    if (index !== -1 && result.usage) {
+      state.accounts[index].usage = result.usage;
+      render();
+    }
     showMessage("额度已刷新");
-    await loadData();
   });
 }
 
@@ -140,7 +147,33 @@ async function api(path, options) {
     const message = envelope.error ? envelope.error.message : `HTTP ${response.status}`;
     throw new Error(message);
   }
+  // 检查业务级别的错误码
+  if (envelope.data && envelope.data.errorCode) {
+    const errorCode = envelope.data.errorCode;
+    const errorMessage = getErrorMessage(errorCode);
+    throw new Error(errorMessage);
+  }
   return envelope.data;
+}
+
+function getErrorMessage(errorCode) {
+  const messages = {
+    UNAUTHORIZED: "未登录或会话已失效",
+    FORBIDDEN: "请求被拒绝",
+    VALIDATION_FAILED: "请求参数无效",
+    PAYLOAD_TOO_LARGE: "请求体过大",
+    NOT_FOUND: "资源不存在",
+    METHOD_NOT_ALLOWED: "请求方法不支持",
+    UNSUPPORTED: "当前操作不支持",
+    UNAVAILABLE: "服务暂时不可用",
+    CONFLICT: "资源状态冲突",
+    OPERATION_IN_PROGRESS: "操作正在进行中",
+    STORAGE_BUSY: "数据库暂时繁忙，请稍后重试",
+    STORAGE_CORRUPTED: "数据库校验失败，请从备份恢复",
+    SCHEMA_TOO_NEW: "数据库版本高于当前程序支持版本",
+    INTERNAL: "服务内部错误",
+  };
+  return messages[errorCode] || "未知错误";
 }
 
 function render() {
@@ -235,6 +268,7 @@ function accountCard(account, providerInfo) {
   actions.append(actionButton("重命名", () => renameAccount(account)));
   const deleteButton = actionButton("删除", () => deleteAccount(account));
   deleteButton.className = "danger";
+  deleteButton.dataset.isActive = account.isActive;
   deleteButton.disabled = state.loading || account.isActive;
   actions.append(deleteButton);
   card.append(actions);
@@ -306,6 +340,13 @@ function showMessage(text, isError = false) {
 
 function setLoading(loading) {
   state.loading = loading;
+  document.querySelectorAll("button").forEach((btn) => {
+    if (btn.classList.contains("danger") && btn.dataset.isActive === "true") {
+      btn.disabled = true;
+    } else {
+      btn.disabled = loading;
+    }
+  });
 }
 
 function isValidEmail(value) {
