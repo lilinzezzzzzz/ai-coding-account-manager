@@ -190,7 +190,8 @@ CredentialStore
 | `cmd/.../main.go` | 加载配置、初始化依赖、启动和关闭服务 |
 | `frontend/static` | 前端 HTML、CSS 和 JavaScript，不接触 token |
 | `internal/config` | 配置读取和启动参数校验 |
-| `internal/router` | `http.Server`、Chi Router、路由注册和 middleware 组装 |
+| `internal/httpserver` | `http.Server` 构造、timeout 和 header limit 配置 |
+| `internal/router` | Chi Router、路由注册和 middleware 组装 |
 | `internal/controller` | HTTP controller、request DTO、response envelope 和错误映射 |
 | `internal/entity` | 业务实体、值对象和稳定错误码 |
 | `internal/model` | 与数据库表对应的 GORM 持久化模型 |
@@ -784,7 +785,6 @@ ai-coding-account-manager/
 ├── go.mod
 ├── go.sum
 ├── frontend/
-│   ├── assets.go
 │   └── static/
 │       ├── index.html
 │       ├── app.css
@@ -794,6 +794,7 @@ ai-coding-account-manager/
 │       └── main.go
 ├── internal/
 │   ├── config/
+│   ├── httpserver/
 │   ├── router/
 │   ├── controller/
 │   ├── entity/

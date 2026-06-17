@@ -105,8 +105,7 @@ func (err *AppError) Unwrap() error {
 
 // AsAppError 从普通 error 中提取 AppError。
 func AsAppError(err error) (*AppError, bool) {
-	var appErr *AppError
-	if errors.As(err, &appErr) {
+	if appErr, ok := errors.AsType[*AppError](err); ok {
 		return appErr, true
 	}
 	return nil, false

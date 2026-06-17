@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/config"
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/router"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httpserver"
 )
 
 func main() {
@@ -36,8 +36,8 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// router.NewServer 组装 http.Server、Chi router 和 middleware。
-	httpServer, err := router.NewServer(router.ServerConfig{
+	// httpserver.NewServer 组装 http.Server 和应用 HTTP handler。
+	httpServer, err := httpserver.NewServer(httpserver.Config{
 		Addr: cfg.BindAddr,
 	})
 	if err != nil {

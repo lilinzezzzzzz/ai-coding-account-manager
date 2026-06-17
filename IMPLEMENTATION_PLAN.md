@@ -46,6 +46,7 @@
 - `cmd/ai-coding-account-manager/main.go`
 - `frontend/static`
 - `internal/config`
+- `internal/httpserver`
 - `internal/router`
 - `internal/controller`
 - `internal/entity`
@@ -83,8 +84,8 @@ go vet ./...
 
 交付物：
 
-- `internal/router` 中的 `http.Server` 构造、Chi router 和 shutdown。
-- Chi router 注册。
+- `internal/httpserver` 中的 `http.Server` 构造。
+- `internal/router` 中的 Chi router 注册。
 - `/api/health`。
 - 基础安全响应头 middleware。
 

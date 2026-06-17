@@ -13,15 +13,33 @@ import (
 // NewHandler 创建应用 HTTP 路由。
 func NewHandler() http.Handler {
 	router := chi.NewRouter()
-	router.Use(middleware.SecurityHeaders)
-	router.NotFound(httpapi.Handle(writeAPINotFound))
-	router.MethodNotAllowed(httpapi.Handle(writeAPIMethodNotAllowed))
 
-	healthController := controller.NewHealthController()
-
-	router.Get("/api/health", httpapi.Handle(healthController.GetHealth))
+	registerMiddlewares(router)
+	registerErrorHandlers(router)
+	registerAPIRoutes(router)
 
 	return router
+}
+
+func registerMiddlewares(router chi.Router) {
+	router.Use(middleware.SecurityHeaders)
+}
+
+func registerErrorHandlers(router chi.Router) {
+	router.NotFound(httpapi.Handle(writeAPINotFound))
+	router.MethodNotAllowed(httpapi.Handle(writeAPIMethodNotAllowed))
+}
+
+func registerAPIRoutes(router chi.Router) {
+	healthController := controller.NewHealthController()
+
+	router.Route("/api", func(api chi.Router) {
+		registerHealthRoutes(api, healthController)
+	})
+}
+
+func registerHealthRoutes(router chi.Router, healthController controller.HealthController) {
+	router.Get("/health", httpapi.Handle(healthController.GetHealth))
 }
 
 func writeAPINotFound(_ http.ResponseWriter, _ *http.Request) error {
