@@ -24,6 +24,8 @@ const (
 	ErrorCodeUnavailable ErrorCode = "UNAVAILABLE"
 	// ErrorCodeConflict 表示请求与当前资源状态冲突。
 	ErrorCodeConflict ErrorCode = "CONFLICT"
+	// ErrorCodeOperationInProgress 表示同类互斥操作正在执行。
+	ErrorCodeOperationInProgress ErrorCode = "OPERATION_IN_PROGRESS"
 	// ErrorCodeStorageBusy 表示 SQLite 当前无法取得写入锁。
 	ErrorCodeStorageBusy ErrorCode = "STORAGE_BUSY"
 	// ErrorCodeStorageCorrupted 表示 SQLite quick check 发现数据损坏。
@@ -55,6 +57,8 @@ func (code ErrorCode) DefaultMessage() string {
 		return "服务暂时不可用"
 	case ErrorCodeConflict:
 		return "资源状态冲突"
+	case ErrorCodeOperationInProgress:
+		return "操作正在进行中"
 	case ErrorCodeStorageBusy:
 		return "数据库暂时繁忙，请稍后重试"
 	case ErrorCodeStorageCorrupted:

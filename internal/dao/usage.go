@@ -54,6 +54,29 @@ func (dao UsageSnapshotDAO) Get(ctx context.Context, providerID string, accountI
 	return usageSnapshotFromModel(record), nil
 }
 
+// ListAll 按 provider/account 稳定列出 usage snapshot。
+func (dao UsageSnapshotDAO) ListAll(ctx context.Context, limit int) ([]entity.UsageSnapshot, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+
+	var records []model.UsageSnapshot
+	err := dao.db.WithContext(ctx).
+		Order("provider_id ASC").
+		Order("account_id ASC").
+		Limit(limit).
+		Find(&records).Error
+	if err != nil {
+		return nil, mapDatabaseError(err)
+	}
+
+	snapshots := make([]entity.UsageSnapshot, 0, len(records))
+	for _, record := range records {
+		snapshots = append(snapshots, usageSnapshotFromModel(record))
+	}
+	return snapshots, nil
+}
+
 // Delete 删除账号 usage snapshot。
 func (dao UsageSnapshotDAO) Delete(ctx context.Context, providerID string, accountID string) error {
 	result := dao.db.WithContext(ctx).

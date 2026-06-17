@@ -130,6 +130,13 @@ func (manager *Manager) ExchangeBootstrap(token string, now time.Time) (Session,
 	return session, nil
 }
 
+// BootstrapToken 返回进程级一次性 bootstrap token。调用方只允许用于启动提示。
+func (manager *Manager) BootstrapToken() string {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	return manager.bootstrapToken
+}
+
 // SessionFromRequest 从 Cookie 中解析并校验会话。
 func (manager *Manager) SessionFromRequest(r *http.Request, now time.Time) (Session, bool) {
 	cookie, err := r.Cookie(SessionCookieName)

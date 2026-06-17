@@ -27,11 +27,11 @@
 | 2 | 已完成 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
 | 3 | 已完成 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
 | 4 | 已完成 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
-| 5 | 未开始 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
-| 6 | 未开始 | Codex 集成 | app-server client、Codex provider、凭证目录 | 只读协议验证通过 |
-| 7 | 未开始 | 前端页面 | 账号列表、操作流、错误展示 | fake provider UI 验收通过 |
-| 8 | 未开始 | Docker 与发布 | Dockerfile、compose、README、smoke test | Docker 本地启动通过 |
-| 9 | 未开始 | 完整验收 | race、备份恢复、三账号人工验收 | 完成标准全部满足 |
+| 5 | 已完成 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
+| 6 | 已完成 | Codex 集成 | app-server client、Codex provider、凭证目录 | 只读协议验证通过 |
+| 7 | 已完成 | 前端页面 | 账号列表、操作流、错误展示 | fake provider UI 验收通过 |
+| 8 | 已完成 | Docker 与发布 | Dockerfile、compose、README、smoke test | Docker 本地启动通过 |
+| 9 | 进行中 | 完整验收 | race、备份恢复、三账号人工验收 | 完成标准全部满足 |
 
 ## 3. Phase 0：项目骨架
 

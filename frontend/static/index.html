@@ -7,12 +7,27 @@
     <link rel="stylesheet" href="/app.css">
   </head>
   <body>
-    <main class="shell">
-      <section class="status-panel">
-        <p class="eyebrow">Local service</p>
-        <h1>AI Coding Account Manager</h1>
-        <p class="status-line">服务已启动</p>
+    <main class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Local Codex Accounts</p>
+          <h1>AI Coding Account Manager</h1>
+        </div>
+        <div class="toolbar">
+          <button id="refresh-button" type="button">刷新额度</button>
+          <button id="import-button" type="button">保存当前账号</button>
+        </div>
+      </header>
+
+      <section id="message" class="message" hidden></section>
+
+      <section id="locked" class="empty-state" hidden>
+        <h2>需要本地启动链接</h2>
+        <p>请使用服务启动日志中带 bootstrap 参数的本地 URL 打开页面。</p>
       </section>
+
+      <section id="providers" class="provider-list" aria-label="Providers"></section>
     </main>
+    <script src="/app.js"></script>
   </body>
 </html>

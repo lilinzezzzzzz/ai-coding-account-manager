@@ -1,0 +1,298 @@
+package controller
+
+import (
+	"net/http"
+	"regexp"
+	"strings"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httptransport"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
+)
+
+var idPattern = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,128}$`)
+
+type accountResponse struct {
+	ProviderID string                 `json:"providerId"`
+	AccountID  string                 `json:"accountId"`
+	StorageID  string                 `json:"storageId"`
+	Label      string                 `json:"label"`
+	Email      *string                `json:"email"`
+	PlanType   *string                `json:"planType"`
+	IsActive   bool                   `json:"isActive"`
+	CreatedAt  int64                  `json:"createdAt"`
+	UpdatedAt  int64                  `json:"updatedAt"`
+	LastUsedAt *int64                 `json:"lastUsedAt"`
+	Usage      *usageSnapshotResponse `json:"usage"`
+}
+
+type usageSnapshotResponse struct {
+	Status       entity.UsageStatus `json:"status"`
+	UsedPercent  *float64           `json:"usedPercent"`
+	ResetsAt     *int64             `json:"resetsAt"`
+	SnapshotJSON *string            `json:"snapshotJson"`
+	ErrorCode    *entity.ErrorCode  `json:"errorCode"`
+	RefreshedAt  int64              `json:"refreshedAt"`
+}
+
+type renameAccountRequest struct {
+	Label string `json:"label"`
+}
+
+type refreshResultResponse struct {
+	ProviderID string                 `json:"providerId"`
+	AccountID  string                 `json:"accountId"`
+	Usage      *usageSnapshotResponse `json:"usage"`
+	ErrorCode  *entity.ErrorCode      `json:"errorCode"`
+}
+
+type loginTaskResponse struct {
+	ID        string `json:"id"`
+	AuthURL   string `json:"authUrl,omitempty"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+type loginStatusResponse struct {
+	ID        string              `json:"id"`
+	State     provider.LoginState `json:"state"`
+	Account   *accountResponse    `json:"account"`
+	ErrorCode *entity.ErrorCode   `json:"errorCode"`
+}
+
+// AccountController 处理账号核心 API。
+type AccountController struct {
+	accounts *service.AccountService
+}
+
+// NewAccountController 创建账号 controller。
+func NewAccountController(accounts *service.AccountService) AccountController {
+	return AccountController{accounts: accounts}
+}
+
+// ListAccounts 返回账号列表和最近 usage snapshot。
+func (controller AccountController) ListAccounts(w http.ResponseWriter, r *http.Request) error {
+	accounts, err := controller.accounts.ListAccounts(r.Context())
+	if err != nil {
+		return err
+	}
+	response := make([]accountResponse, 0, len(accounts))
+	for _, account := range accounts {
+		response = append(response, accountViewToResponse(account))
+	}
+	httptransport.WriteOK(w, response)
+	return nil
+}
+
+// ImportCurrentAccount 保存当前 provider 账号。
+func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, r *http.Request) error {
+	providerID, err := providerIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	account, err := controller.accounts.ImportCurrentAccount(r.Context(), providerID)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, accountViewToResponse(account))
+	return nil
+}
+
+// RenameAccount 更新账号展示名称。
+func (controller AccountController) RenameAccount(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := providerAndAccountIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	var request renameAccountRequest
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	label := strings.TrimSpace(request.Label)
+	if label == "" || len(label) > 120 {
+		return entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "label 长度必须在 1 到 120 之间")
+	}
+	account, err := controller.accounts.RenameAccount(r.Context(), providerID, accountID, label)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, accountToResponse(account, nil))
+	return nil
+}
+
+// ReloginAccount 是 post-MVP 能力，当前返回稳定 unsupported。
+func (controller AccountController) ReloginAccount(_ http.ResponseWriter, _ *http.Request) error {
+	return entity.NewAppError(entity.ErrorCodeUnsupported)
+}
+
+// ActivateAccount 激活账号。
+func (controller AccountController) ActivateAccount(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := providerAndAccountIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	account, err := controller.accounts.ActivateAccount(r.Context(), providerID, accountID)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, accountToResponse(account, nil))
+	return nil
+}
+
+// DeleteAccount 删除非 active 账号。
+func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := providerAndAccountIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	if err := controller.accounts.DeleteAccount(r.Context(), providerID, accountID); err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, map[string]bool{"deleted": true})
+	return nil
+}
+
+// StartLogin 创建 provider 登录任务。
+func (controller AccountController) StartLogin(w http.ResponseWriter, r *http.Request) error {
+	providerID, err := providerIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	task, err := controller.accounts.StartLogin(r.Context(), providerID)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, loginTaskResponse{
+		ID:        task.ID,
+		AuthURL:   task.AuthURL,
+		ExpiresAt: task.ExpiresAt,
+	})
+	return nil
+}
+
+// PollLogin 查询登录任务。
+func (controller AccountController) PollLogin(w http.ResponseWriter, r *http.Request) error {
+	taskID, err := taskIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	status, err := controller.accounts.PollLogin(r.Context(), taskID)
+	if err != nil {
+		return err
+	}
+	response := loginStatusResponse{
+		ID:        status.ID,
+		State:     status.State,
+		ErrorCode: status.ErrorCode,
+	}
+	if status.Account != nil {
+		account := accountToResponse(*status.Account, nil)
+		response.Account = &account
+	}
+	httptransport.WriteOK(w, response)
+	return nil
+}
+
+// CancelLogin 取消登录任务。
+func (controller AccountController) CancelLogin(w http.ResponseWriter, r *http.Request) error {
+	taskID, err := taskIDFromRequest(r)
+	if err != nil {
+		return err
+	}
+	if err := controller.accounts.CancelLogin(r.Context(), taskID); err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, map[string]bool{"canceled": true})
+	return nil
+}
+
+// RefreshUsage 刷新全部账号 usage。
+func (controller AccountController) RefreshUsage(w http.ResponseWriter, r *http.Request) error {
+	results, err := controller.accounts.RefreshAllUsage(r.Context())
+	if err != nil {
+		return err
+	}
+	response := make([]refreshResultResponse, 0, len(results))
+	for _, result := range results {
+		response = append(response, refreshResultToResponse(result))
+	}
+	httptransport.WriteOK(w, response)
+	return nil
+}
+
+func accountViewToResponse(view service.AccountWithUsage) accountResponse {
+	return accountToResponse(view.Account, view.Usage)
+}
+
+func accountToResponse(account entity.Account, usage *entity.UsageSnapshot) accountResponse {
+	response := accountResponse{
+		ProviderID: account.ProviderID,
+		AccountID:  account.AccountID,
+		StorageID:  account.StorageID,
+		Label:      account.Label,
+		Email:      account.Email,
+		PlanType:   account.PlanType,
+		IsActive:   account.IsActive,
+		CreatedAt:  account.CreatedAt,
+		UpdatedAt:  account.UpdatedAt,
+		LastUsedAt: account.LastUsedAt,
+	}
+	if usage != nil {
+		usageResponse := usageToResponse(*usage)
+		response.Usage = &usageResponse
+	}
+	return response
+}
+
+func usageToResponse(usage entity.UsageSnapshot) usageSnapshotResponse {
+	return usageSnapshotResponse{
+		Status:       usage.Status,
+		UsedPercent:  usage.UsedPercent,
+		ResetsAt:     usage.ResetsAt,
+		SnapshotJSON: usage.SnapshotJSON,
+		ErrorCode:    usage.ErrorCode,
+		RefreshedAt:  usage.RefreshedAt,
+	}
+}
+
+func refreshResultToResponse(result service.RefreshResult) refreshResultResponse {
+	response := refreshResultResponse{
+		ProviderID: result.ProviderID,
+		AccountID:  result.AccountID,
+		ErrorCode:  result.ErrorCode,
+	}
+	if result.Usage != nil {
+		usage := usageToResponse(*result.Usage)
+		response.Usage = &usage
+	}
+	return response
+}
+
+func providerAndAccountIDFromRequest(r *http.Request) (string, string, error) {
+	providerID, err := providerIDFromRequest(r)
+	if err != nil {
+		return "", "", err
+	}
+	accountID := chi.URLParam(r, "accountId")
+	if !idPattern.MatchString(accountID) {
+		return "", "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "accountId 无效")
+	}
+	return providerID, accountID, nil
+}
+
+func providerIDFromRequest(r *http.Request) (string, error) {
+	providerID := chi.URLParam(r, "providerId")
+	if !idPattern.MatchString(providerID) {
+		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "providerId 无效")
+	}
+	return providerID, nil
+}
+
+func taskIDFromRequest(r *http.Request) (string, error) {
+	taskID := chi.URLParam(r, "id")
+	if !idPattern.MatchString(taskID) {
+		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "task id 无效")
+	}
+	return taskID, nil
+}

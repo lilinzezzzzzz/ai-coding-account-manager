@@ -54,6 +54,8 @@ func statusForError(err error) int {
 		return http.StatusBadRequest
 	case entity.ErrorCodePayloadTooLarge:
 		return http.StatusRequestEntityTooLarge
+	case entity.ErrorCodeOperationInProgress:
+		return http.StatusConflict
 	default:
 		return http.StatusOK
 	}

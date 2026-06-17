@@ -9,11 +9,22 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/config"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httpserver"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/credentials"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/database"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/provider/codex"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/provider/fake"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/security"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
 
 func main() {
@@ -35,10 +46,40 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return fmt.Errorf("create data dir: %w", err)
+	}
+
+	appDB, err := database.Open(context.Background(), database.Config{
+		Path: filepath.Join(cfg.DataDir, "state.db"),
+	})
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer func() {
+		if err := appDB.Close(); err != nil {
+			logger.Error("close database failed", "error", err)
+		}
+	}()
+
+	providerRegistry := provider.NewRegistry()
+	if err := registerProviders(context.Background(), providerRegistry, cfg); err != nil {
+		return err
+	}
+	daos := dao.NewDAOs(appDB.GORM())
+	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry)
+	providerService := service.NewProviderService(providerRegistry)
+	securityManager, err := security.NewManager(security.Config{BindAddr: cfg.BindAddr})
+	if err != nil {
+		return fmt.Errorf("create security manager: %w", err)
+	}
 
 	// httpserver.NewServer 组装 http.Server 和应用 HTTP handler。
 	httpServer, err := httpserver.NewServer(httpserver.Config{
-		Addr: cfg.BindAddr,
+		Addr:            cfg.BindAddr,
+		SecurityManager: securityManager,
+		ProviderService: providerService,
+		AccountService:  accountService,
 	})
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
@@ -65,7 +106,7 @@ func run() error {
 		serveErr <- err
 	}()
 
-	baseURL := "http://" + listener.Addr().String() + "/"
+	baseURL := "http://" + listener.Addr().String() + "/?bootstrap=" + securityManager.BootstrapToken()
 	logger.Info("server started", "addr", listener.Addr().String(), "url", baseURL)
 
 	// 任一分支先发生都会结束主等待：服务异常退出直接返回，收到系统信号则进入优雅关闭。
@@ -81,6 +122,9 @@ func run() error {
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown server: %w", err)
 	}
+	if err := providerService.Close(shutdownCtx); err != nil {
+		logger.Warn("close providers failed", "error", err)
+	}
 
 	// 等 Serve goroutine 确认退出，避免 main 在后台 goroutine 未收尾时直接返回。
 	if err := <-serveErr; err != nil {
@@ -88,4 +132,61 @@ func run() error {
 	}
 	logger.Info("server stopped")
 	return nil
+}
+
+func registerProviders(ctx context.Context, providerRegistry *provider.Registry, cfg config.Config) error {
+	if strings.EqualFold(cfg.ProviderMode, "fake") {
+		if err := providerRegistry.Register(ctx, newDefaultFakeProvider()); err != nil {
+			return fmt.Errorf("register fake provider: %w", err)
+		}
+		return nil
+	}
+
+	credentialStore, err := credentials.NewStore(credentials.Config{
+		RootDir:        filepath.Join(cfg.DataDir, "credentials"),
+		ActiveCodexDir: cfg.CodexHome,
+	})
+	if err != nil {
+		return fmt.Errorf("create credentials store: %w", err)
+	}
+	codexProvider, err := codex.New(codex.Config{
+		Bin:         cfg.CodexBin,
+		CodexHome:   cfg.CodexHome,
+		Credentials: credentialStore,
+	})
+	if err != nil {
+		return fmt.Errorf("create codex provider: %w", err)
+	}
+	if err := providerRegistry.Register(ctx, codexProvider); err != nil {
+		return fmt.Errorf("register codex provider: %w", err)
+	}
+	return nil
+}
+
+func newDefaultFakeProvider() provider.Provider {
+	usedPercent := 12.5
+	account := entity.Account{
+		ProviderID: "codex",
+		AccountID:  "fake-codex-account",
+		Label:      "Fake Codex Account",
+		Email:      stringPtr("fake@example.local"),
+		PlanType:   stringPtr("fake"),
+	}
+	return fake.New(fake.Config{
+		ID:          "codex",
+		DisplayName: "OpenAI Codex",
+		Accounts: []fake.AccountState{{
+			Account:   account,
+			IsCurrent: true,
+			Usage: entity.UsageSnapshot{
+				Status:      entity.UsageStatusReady,
+				UsedPercent: &usedPercent,
+				RefreshedAt: time.Now().UTC().UnixMilli(),
+			},
+		}},
+	})
+}
+
+func stringPtr(value string) *string {
+	return &value
 }

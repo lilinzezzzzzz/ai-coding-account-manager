@@ -41,8 +41,8 @@ func TestRootEndpointNotFound(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	if body := strings.TrimSpace(response.Body.String()); body != `{"data":null,"error":{"code":"NOT_FOUND","message":"接口不存在"}}` {
-		t.Fatalf("body = %q, want not found envelope", body)
+	if body := response.Body.String(); !strings.Contains(body, "AI Coding Account Manager") {
+		t.Fatalf("body = %q, want frontend html", body)
 	}
 	assertSecurityHeaders(t, response.Result().Header)
 }
@@ -55,11 +55,8 @@ func TestNonAPIEndpointNotFound(t *testing.T) {
 	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
-	}
-	if body := strings.TrimSpace(response.Body.String()); body != `{"data":null,"error":{"code":"NOT_FOUND","message":"接口不存在"}}` {
-		t.Fatalf("body = %q, want not found envelope", body)
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusNotFound)
 	}
 	assertSecurityHeaders(t, response.Result().Header)
 }

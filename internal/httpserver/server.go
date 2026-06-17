@@ -7,12 +7,15 @@ import (
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/router"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/security"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
 
 // Config 保存 HTTP server 构造参数。
 type Config struct {
 	Addr            string
 	SecurityManager *security.Manager
+	ProviderService service.ProviderService
+	AccountService  *service.AccountService
 }
 
 // NewServer 显式构造带超时限制的 http.Server。
@@ -31,7 +34,7 @@ func NewServer(cfg Config) (*http.Server, error) {
 
 	return &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           router.NewHandler(router.Config{SecurityManager: securityManager}),
+		Handler:           router.NewHandler(router.Config{SecurityManager: securityManager, ProviderService: cfg.ProviderService, AccountService: cfg.AccountService}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

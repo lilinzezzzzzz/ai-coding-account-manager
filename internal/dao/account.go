@@ -92,6 +92,47 @@ func (dao AccountDAO) ListByProvider(ctx context.Context, providerID string, lim
 	return accounts, nil
 }
 
+// ListAll 按 provider/account 稳定列出账号。
+func (dao AccountDAO) ListAll(ctx context.Context, limit int) ([]entity.Account, error) {
+	if limit <= 0 {
+		limit = 500
+	}
+
+	var records []model.Account
+	err := dao.db.WithContext(ctx).
+		Order("provider_id ASC").
+		Order("account_id ASC").
+		Limit(limit).
+		Find(&records).Error
+	if err != nil {
+		return nil, mapDatabaseError(err)
+	}
+
+	accounts := make([]entity.Account, 0, len(records))
+	for _, record := range records {
+		accounts = append(accounts, accountFromModel(record))
+	}
+	return accounts, nil
+}
+
+// UpdateLabel 更新账号展示名称。
+func (dao AccountDAO) UpdateLabel(ctx context.Context, providerID string, accountID string, label string, now int64) error {
+	result := dao.db.WithContext(ctx).
+		Model(&model.Account{}).
+		Where("provider_id = ? AND account_id = ?", providerID, accountID).
+		Updates(map[string]any{
+			"label":      label,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return mapDatabaseError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return entity.NewAppError(entity.ErrorCodeNotFound)
+	}
+	return nil
+}
+
 // SetActive 将同一 provider 下的活动账号切换到目标账号。
 func (dao AccountDAO) SetActive(ctx context.Context, providerID string, accountID string, now int64) error {
 	db := dao.db.WithContext(ctx)

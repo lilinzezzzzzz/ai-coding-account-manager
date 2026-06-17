@@ -1,0 +1,20 @@
+services:
+  ai-coding-account-manager:
+    build:
+      context: .
+    image: ai-coding-account-manager:local
+    ports:
+      - "127.0.0.1:43127:43127"
+    environment:
+      AI_CODING_ACCOUNT_MANAGER_BIND_ADDR: "0.0.0.0:43127"
+      AI_CODING_ACCOUNT_MANAGER_CONTAINER: "1"
+      AI_CODING_ACCOUNT_MANAGER_DATA_DIR: "/data"
+      CODEX_HOME: "/codex"
+    volumes:
+      - aicam-data:/data
+      - codex-home:/codex
+    restart: unless-stopped
+
+volumes:
+  aicam-data:
+  codex-home:

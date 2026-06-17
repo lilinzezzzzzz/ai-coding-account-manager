@@ -18,9 +18,11 @@
   请求解析。
 - SQLite/GORM 持久化底座、SQL migration、DAO、unit-of-work 和数据库启动校验。
 - Provider contract、registry、fake provider 和 provider service facade。
-- 后端 API-only 结构，前端静态资源不由后端服务。
+- 账号核心 API、Codex app-server provider、隔离凭据目录和原子切换。
+- 原生 HTML/CSS/JavaScript 管理页面。
+- Dockerfile、compose.yaml 和本地容器启动配置。
 
-后续账号 HTTP API、真实 Codex provider、凭证目录和前端交互能力仍按实施计划逐步落地。
+后续仍需补充更完整的真实 Codex 人工验收记录和发布打包流程。
 
 ## 项目结构
 
@@ -86,10 +88,38 @@ app-server；service 不依赖 Chi、GORM model 或 `infra`；GORM 只出现在 
 go run ./cmd/ai-coding-account-manager
 ```
 
+启动日志会打印带一次性 `bootstrap` 参数的本地 URL。用该 URL 打开页面后，浏览器会
+兑换 HttpOnly session Cookie，并移除地址栏中的 bootstrap 参数。
+
 可通过环境变量覆盖监听地址，但只允许 loopback 地址：
 
 ```bash
 AI_CODING_ACCOUNT_MANAGER_BIND_ADDR=127.0.0.1:43127 go run ./cmd/ai-coding-account-manager
+```
+
+如果只需要验收前端交互，可用 fake provider 启动：
+
+```bash
+AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE=fake go run ./cmd/ai-coding-account-manager
+```
+
+## Docker 本地启动
+
+Docker 只把服务发布到宿主机 loopback 地址：
+
+```bash
+docker compose up --build
+```
+
+默认使用 named volume 保存 `/data` 和 `/codex`。如果要复用宿主机 Codex 登录态，
+可以把 `compose.yaml` 中的 `codex-home` volume 改为只限本机使用的 bind mount，
+例如 `~/.codex:/codex`。不要把真实 `auth.json` 放入 build context 或镜像 layer。
+
+基础检查：
+
+```bash
+docker compose config
+docker compose build
 ```
 
 ## 测试
@@ -141,6 +171,11 @@ error != null 表示业务失败，按 error.code 分支处理
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `AI_CODING_ACCOUNT_MANAGER_BIND_ADDR` | `127.0.0.1:43127` | HTTP 监听地址，只允许 `127.0.0.1` 或 `localhost` |
+| `AI_CODING_ACCOUNT_MANAGER_CONTAINER` | 空 | 设为 `1` 时允许容器内监听 `0.0.0.0`，compose 仍只发布到宿主机 `127.0.0.1` |
+| `AI_CODING_ACCOUNT_MANAGER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/ai-coding-account-manager` | SQLite、隔离凭据和运行数据目录 |
+| `AI_CODING_ACCOUNT_MANAGER_CODEX_BIN` | `codex` | Codex CLI 可执行文件路径 |
+| `AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE` | 空 | 设为 `fake` 时使用 fake provider |
+| `CODEX_HOME` | `~/.codex` | 活动 Codex 凭据目录 |
 
 当前不使用根目录 `configs/` 配置文件目录。
 
@@ -153,8 +188,9 @@ error != null 表示业务失败，按 error.code 分支处理
 - 写请求需要同源 Origin、`X-CSRF-Token`、`Content-Type: application/json`，并限制
   请求体不超过 16 KiB。
 - JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
-- 不把 token、完整 `auth.json`、OAuth URL、bootstrap token 或 session Cookie 写入
-  数据库、日志、URL、浏览器存储或 API 响应；CSRF token 只通过已认证的
-  `/api/session` 响应返回。
+- 不把 token、完整 `auth.json`、OAuth URL、session Cookie 写入数据库、项目文件、
+  浏览器持久化存储或 API 响应；CSRF token 只通过已认证的 `/api/session` 响应返回。
+- bootstrap token 只出现在进程启动日志的本地 URL 中，兑换成功后即失效，并从浏览器
+  地址栏移除。
 - Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
   边界内。
