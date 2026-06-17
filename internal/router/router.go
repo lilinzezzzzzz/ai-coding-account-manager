@@ -6,8 +6,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/controller"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httptransport"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/middleware"
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/transport/httpapi"
 )
 
 // NewHandler 创建应用 HTTP 路由。
@@ -26,8 +26,8 @@ func registerMiddlewares(router chi.Router) {
 }
 
 func registerErrorHandlers(router chi.Router) {
-	router.NotFound(httpapi.Handle(writeAPINotFound))
-	router.MethodNotAllowed(httpapi.Handle(writeAPIMethodNotAllowed))
+	router.NotFound(httptransport.Handle(writeAPINotFound))
+	router.MethodNotAllowed(httptransport.Handle(writeAPIMethodNotAllowed))
 }
 
 func registerAPIRoutes(router chi.Router) {
@@ -39,7 +39,7 @@ func registerAPIRoutes(router chi.Router) {
 }
 
 func registerHealthRoutes(router chi.Router, healthController controller.HealthController) {
-	router.Get("/health", httpapi.Handle(healthController.GetHealth))
+	router.Get("/health", httptransport.Handle(healthController.GetHealth))
 }
 
 func writeAPINotFound(_ http.ResponseWriter, _ *http.Request) error {

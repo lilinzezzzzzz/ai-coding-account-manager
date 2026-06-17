@@ -27,7 +27,7 @@ internal/config/                启动配置读取和校验
 internal/httpserver/            http.Server 构造、timeout 和 header limit
 internal/router/                Chi router、路由注册和 middleware 组装
 internal/middleware/            跨请求 middleware
-internal/transport/httpapi/     API response envelope 和错误响应适配
+internal/httptransport/         HTTP API response envelope 和错误响应适配
 internal/controller/            HTTP controller
 internal/entity/                业务实体、值对象和稳定错误码
 internal/service/               业务用例编排
@@ -57,8 +57,8 @@ client
 - `router` 负责注册 Chi route，并把请求交给 middleware 链。
 - `middleware` 处理跨请求通用边界，例如 recovery、安全响应头和请求约束。
 - `controller` 只处理 HTTP 传输层：解析 path、query、body，校验 request DTO，
-  调用 service，并通过 `transport/httpapi` 写出 response。
-- `transport/httpapi` 负责 `/api/*` 的统一 response envelope 和错误码映射。
+  调用 service，并通过 `httptransport` 写出 response。
+- `httptransport` 负责 `/api/*` 的统一 response envelope 和错误码映射。
   API 业务错误不依赖 HTTP status 区分，统一通过 `error.code` 表达。
 - `service` 负责业务用例编排、事务边界、DAO 调用顺序和外部 provider 协调。
   service 不直接读写 HTTP response，也不直接拼 GORM query。

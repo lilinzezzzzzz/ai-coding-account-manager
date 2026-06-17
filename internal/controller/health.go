@@ -3,7 +3,7 @@ package controller
 import (
 	"net/http"
 
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/transport/httpapi"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httptransport"
 )
 
 type healthResponse struct {
@@ -20,6 +20,6 @@ func NewHealthController() HealthController {
 
 // GetHealth 返回当前服务健康状态。
 func (HealthController) GetHealth(w http.ResponseWriter, _ *http.Request) error {
-	httpapi.WriteOK(w, healthResponse{Status: "ok"})
+	httptransport.WriteOK(w, healthResponse{Status: "ok"})
 	return nil
 }
