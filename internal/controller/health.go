@@ -18,7 +18,8 @@ func NewHealthController() HealthController {
 	return HealthController{}
 }
 
-// Show 返回当前服务健康状态。
-func (HealthController) Show(w http.ResponseWriter, _ *http.Request) {
+// GetHealth 返回当前服务健康状态。
+func (HealthController) GetHealth(w http.ResponseWriter, _ *http.Request) error {
 	httpapi.WriteOK(w, healthResponse{Status: "ok"})
+	return nil
 }

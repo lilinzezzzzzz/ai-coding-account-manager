@@ -2,15 +2,13 @@ package router
 
 import (
 	"fmt"
-	"io/fs"
 	"net/http"
 	"time"
 )
 
 // ServerConfig 保存 HTTP server 构造参数。
 type ServerConfig struct {
-	Addr     string
-	StaticFS fs.FS
+	Addr string
 }
 
 // NewServer 显式构造带超时限制的 http.Server。
@@ -19,10 +17,7 @@ func NewServer(cfg ServerConfig) (*http.Server, error) {
 		return nil, fmt.Errorf("server address is required")
 	}
 
-	handler, err := NewHandler(cfg.StaticFS)
-	if err != nil {
-		return nil, err
-	}
+	handler := NewHandler()
 
 	return &http.Server{
 		Addr:              cfg.Addr,

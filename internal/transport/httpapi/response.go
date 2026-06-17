@@ -29,66 +29,25 @@ func WriteOK(w http.ResponseWriter, data any) {
 // WriteError 将业务错误映射为统一错误响应。
 func WriteError(w http.ResponseWriter, err error) {
 	appErr := normalizeError(err)
-	writeJSON(w, statusCodeForError(appErr.Code), responseEnvelope{
+	writeJSON(w, http.StatusOK, responseEnvelope{
 		Data: nil,
 		Error: &errorResponse{
-			Code:    appErr.Code,
-			Message: appErr.Message,
+			Code:    appErr.ErrorCode(),
+			Message: appErr.DisplayMessage(),
 		},
 	})
 }
 
 func normalizeError(err error) *entity.AppError {
 	if err == nil {
-		return entity.NewAppError(entity.ErrorCodeInternal, "服务内部错误")
+		return entity.NewAppError(entity.ErrorCodeInternal)
 	}
 
 	appErr, ok := entity.AsAppError(err)
 	if !ok {
-		return entity.WrapAppError(entity.ErrorCodeInternal, "服务内部错误", err)
+		return entity.WrapAppError(entity.ErrorCodeInternal, err)
 	}
-	normalized := *appErr
-	if normalized.Code == "" {
-		normalized.Code = entity.ErrorCodeInternal
-	}
-	if normalized.Message == "" {
-		normalized.Message = defaultMessageForCode(normalized.Code)
-	}
-	return &normalized
-}
-
-func statusCodeForError(code entity.ErrorCode) int {
-	switch code {
-	case entity.ErrorCodeValidationFailed:
-		return http.StatusBadRequest
-	case entity.ErrorCodeNotFound:
-		return http.StatusNotFound
-	case entity.ErrorCodeMethodNotAllowed:
-		return http.StatusMethodNotAllowed
-	case entity.ErrorCodeUnsupported:
-		return http.StatusNotImplemented
-	case entity.ErrorCodeConflict:
-		return http.StatusConflict
-	default:
-		return http.StatusInternalServerError
-	}
-}
-
-func defaultMessageForCode(code entity.ErrorCode) string {
-	switch code {
-	case entity.ErrorCodeValidationFailed:
-		return "请求参数无效"
-	case entity.ErrorCodeNotFound:
-		return "资源不存在"
-	case entity.ErrorCodeMethodNotAllowed:
-		return "请求方法不支持"
-	case entity.ErrorCodeUnsupported:
-		return "当前操作不支持"
-	case entity.ErrorCodeConflict:
-		return "资源状态冲突"
-	default:
-		return "服务内部错误"
-	}
+	return appErr
 }
 
 func writeJSON(w http.ResponseWriter, statusCode int, value any) {

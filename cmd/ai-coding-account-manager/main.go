@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/frontend"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/config"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/router"
 )
@@ -37,16 +36,9 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// frontend.StaticFS 返回 embed 后的静态资源，router 只需要 fs.FS 边界。
-	staticFS, err := frontend.StaticFS()
-	if err != nil {
-		return fmt.Errorf("load static files: %w", err)
-	}
-
 	// router.NewServer 组装 http.Server、Chi router 和 middleware。
 	httpServer, err := router.NewServer(router.ServerConfig{
-		Addr:     cfg.BindAddr,
-		StaticFS: staticFS,
+		Addr: cfg.BindAddr,
 	})
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)

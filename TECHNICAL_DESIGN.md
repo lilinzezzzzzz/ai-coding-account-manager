@@ -115,8 +115,7 @@ CGO。最终用户无需安装 SQLite Server、`sqlite3` CLI、C 编译器或额
 
 使用原生 HTML、CSS 和 JavaScript，不引入前端构建链。前后端代码位于同一个
 代码仓库，但目录上保持前后端分离：前端资源放在顶层 `frontend/static`，
-后端代码放在 `internal` 的 MVC 目录中。`frontend` package 通过
-`//go:embed` 将静态资源嵌入同一个后端二进制。前端通过同源 `fetch` 调用 API，不使用 `localStorage`、
+后端代码放在 `internal` 的 MVC 目录中。后端只提供 API，不负责嵌入或返回前端静态资源。前端通过 `fetch` 调用 API，不使用 `localStorage`、
 `sessionStorage` 或 IndexedDB 保存账号数据。
 
 ### 4.3 原生启动与构建
@@ -135,7 +134,7 @@ CGO_ENABLED=0 go build -trimpath -o dist/ai-coding-account-manager \
 默认监听 `127.0.0.1:43127`，生成进程级安全会话，并在启动日志中输出管理页面
 URL。端口被占用时直接失败，后端不主动调用桌面环境打开浏览器。
 
-静态文件和 migration 通过 `//go:embed` 进入单一二进制。运行数据始终写入
+migration 通过 `//go:embed` 进入后端二进制。运行数据始终写入
 XDG data dir，不能写入可执行文件目录或临时解包目录。
 
 ### 4.4 Docker 本地启动
@@ -190,7 +189,6 @@ CredentialStore
 | --- | --- |
 | `cmd/.../main.go` | 加载配置、初始化依赖、启动和关闭服务 |
 | `frontend/static` | 前端 HTML、CSS 和 JavaScript，不接触 token |
-| `frontend` | 前端静态资源 embed 适配，只向后端暴露 `fs.FS` |
 | `internal/config` | 配置读取和启动参数校验 |
 | `internal/router` | `http.Server`、Chi Router、路由注册和 middleware 组装 |
 | `internal/controller` | HTTP controller、request DTO、response envelope 和错误映射 |
@@ -816,7 +814,7 @@ ai-coding-account-manager/
 └── scripts/
 ```
 
-凭证和运行数据位于 XDG data dir，不属于项目交付物。发布构建必须验证静态文件和
+凭证和运行数据位于 XDG data dir，不属于项目交付物。发布构建必须验证
 migration 已嵌入二进制。Dockerfile、compose、`.dockerignore` 和
 `internal/scheduler` 在 post-MVP 阶段补齐。
 

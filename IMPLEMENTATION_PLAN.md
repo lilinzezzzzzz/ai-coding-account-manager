@@ -23,7 +23,7 @@
 | 阶段 | 主题 | 主要产出 | 进入下一阶段条件 |
 | --- | --- | --- | --- |
 | 0 | 项目骨架 | Go module、目录、基础命令 | `go test ./...` 可运行 |
-| 1 | HTTP 与静态资源 | `http.Server`、Chi、嵌入页面、health | 原生启动可访问 `/api/health` |
+| 1 | HTTP API 基础 | `http.Server`、Chi、health | 原生启动可访问 `/api/health` |
 | 2 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
 | 3 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
 | 4 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
@@ -74,19 +74,18 @@ go vet ./...
 - `go test ./...` 无法在空业务骨架上运行。
 - module path、目录结构或包名需要反复调整。
 
-## 4. Phase 1：HTTP Server 与静态资源
+## 4. Phase 1：HTTP Server 与 API 基础
 
 目标：
 
-- 跑通本地 HTTP 服务、Chi router、优雅关闭和静态资源嵌入。
-- 先放一个极薄的前端占位页，避免后期才发现 embed 或路由问题。
+- 跑通本地 HTTP 服务、Chi router 和优雅关闭。
+- 后端只提供 API，不负责前端静态资源服务。
 
 交付物：
 
 - `internal/router` 中的 `http.Server` 构造、Chi router 和 shutdown。
 - Chi router 注册。
 - `/api/health`。
-- `/` 返回嵌入的 `index.html`，页面只显示服务已启动。
 - 基础安全响应头 middleware。
 
 实施要点：
@@ -107,7 +106,6 @@ go run ./cmd/ai-coding-account-manager
 阻断条件：
 
 - 不能稳定关闭 HTTP server。
-- 静态资源无法从二进制内提供。
 - health endpoint 无法被 `httptest` 覆盖。
 
 ## 5. Phase 2：配置与本地安全边界
