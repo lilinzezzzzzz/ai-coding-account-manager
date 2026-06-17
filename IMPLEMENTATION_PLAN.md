@@ -20,18 +20,18 @@
 
 ## 2. 阶段总览
 
-| 阶段 | 主题 | 主要产出 | 进入下一阶段条件 |
-| --- | --- | --- | --- |
-| 0 | 项目骨架 | Go module、目录、基础命令 | `go test ./...` 可运行 |
-| 1 | HTTP API 基础 | `http.Server`、Chi、health | 原生启动可访问 `/api/health` |
-| 2 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
-| 3 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
-| 4 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
-| 5 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
-| 6 | Codex 集成 | app-server client、Codex provider、凭证目录 | 只读协议验证通过 |
-| 7 | 前端页面 | 账号列表、操作流、错误展示 | fake provider UI 验收通过 |
-| 8 | Docker 与发布 | Dockerfile、compose、README、smoke test | Docker 本地启动通过 |
-| 9 | 完整验收 | race、备份恢复、三账号人工验收 | 完成标准全部满足 |
+| 阶段 | 状态 | 主题 | 主要产出 | 进入下一阶段条件 |
+| --- | --- | --- | --- | --- |
+| 0 | 已完成 | 项目骨架 | Go module、目录、基础命令 | `go test ./...` 可运行 |
+| 1 | 已完成 | HTTP API 基础 | `http.Server`、Chi、health | 原生启动可访问 `/api/health` |
+| 2 | 已完成 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
+| 3 | 已完成 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
+| 4 | 已完成 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
+| 5 | 未开始 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
+| 6 | 未开始 | Codex 集成 | app-server client、Codex provider、凭证目录 | 只读协议验证通过 |
+| 7 | 未开始 | 前端页面 | 账号列表、操作流、错误展示 | fake provider UI 验收通过 |
+| 8 | 未开始 | Docker 与发布 | Dockerfile、compose、README、smoke test | Docker 本地启动通过 |
+| 9 | 未开始 | 完整验收 | race、备份恢复、三账号人工验收 | 完成标准全部满足 |
 
 ## 3. Phase 0：项目骨架
 

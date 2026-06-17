@@ -9,14 +9,18 @@
 
 ## 当前状态
 
-项目处于 MVP 骨架阶段，当前已包含：
+项目处于 MVP 分阶段实现中，当前已包含：
 
 - Go HTTP server 和 Chi router 装配。
 - `/api/health` 健康检查接口。
 - 统一 API response envelope。
+- Host 校验、一次性 bootstrap、HttpOnly session Cookie、CSRF token 和 strict JSON
+  请求解析。
+- SQLite/GORM 持久化底座、SQL migration、DAO、unit-of-work 和数据库启动校验。
+- Provider contract、registry、fake provider 和 provider service facade。
 - 后端 API-only 结构，前端静态资源不由后端服务。
 
-后续数据库、账号、provider、凭证目录和前端交互能力仍按实施计划逐步落地。
+后续账号 HTTP API、真实 Codex provider、凭证目录和前端交互能力仍按实施计划逐步落地。
 
 ## 项目结构
 
@@ -29,6 +33,7 @@ internal/router/                Chi router、路由注册和 middleware 组装
 internal/middleware/            跨请求 middleware
 internal/httptransport/         HTTP API response envelope 和错误响应适配
 internal/controller/            HTTP controller
+internal/provider/              provider-neutral contract 和 registry
 internal/entity/                业务实体、值对象和稳定错误码
 internal/service/               业务用例编排
 internal/dao/                   持久化访问边界
@@ -142,7 +147,14 @@ error != null 表示业务失败，按 error.code 分支处理
 ## 安全边界
 
 - 不向局域网或公网暴露管理服务。
-- 不把 token、完整 `auth.json`、OAuth URL、session 或 CSRF token 写入数据库、
-  日志、URL、浏览器存储或 API 响应。
+- 只接受配置端口上的 `127.0.0.1` 或 `localhost` Host。
+- `/api/session/bootstrap` 使用一次性 bootstrap token 兑换 HttpOnly session Cookie。
+- 已登录页面通过 `GET /api/session` 获取与 session 绑定的 CSRF token。
+- 写请求需要同源 Origin、`X-CSRF-Token`、`Content-Type: application/json`，并限制
+  请求体不超过 16 KiB。
+- JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
+- 不把 token、完整 `auth.json`、OAuth URL、bootstrap token 或 session Cookie 写入
+  数据库、日志、URL、浏览器存储或 API 响应；CSRF token 只通过已认证的
+  `/api/session` 响应返回。
 - Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
   边界内。

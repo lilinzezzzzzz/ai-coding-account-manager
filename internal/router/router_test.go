@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/router"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/security"
 )
 
 func TestHealthEndpoint(t *testing.T) {
@@ -14,6 +15,7 @@ func TestHealthEndpoint(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -33,6 +35,7 @@ func TestRootEndpointNotFound(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -49,6 +52,7 @@ func TestNonAPIEndpointNotFound(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/missing.js", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -65,6 +69,7 @@ func TestMissingAPIEndpoint(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/missing", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -81,6 +86,7 @@ func TestAPIBaseEndpoint(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -97,6 +103,7 @@ func TestMethodNotAllowedAPIEndpoint(t *testing.T) {
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/health", nil)
+	request.Host = "127.0.0.1:43127"
 	handler.ServeHTTP(response, request)
 
 	if response.Code != http.StatusOK {
@@ -111,7 +118,14 @@ func TestMethodNotAllowedAPIEndpoint(t *testing.T) {
 func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 
-	return router.NewHandler()
+	securityManager, err := security.NewManager(security.Config{
+		BindAddr:       "127.0.0.1:43127",
+		BootstrapToken: "test-bootstrap-token",
+	})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	return router.NewHandler(router.Config{SecurityManager: securityManager})
 }
 
 func assertSecurityHeaders(t *testing.T, header http.Header) {

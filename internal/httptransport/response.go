@@ -28,14 +28,35 @@ func WriteOK(w http.ResponseWriter, data any) {
 
 // WriteError 将业务错误映射为统一错误响应。
 func WriteError(w http.ResponseWriter, err error) {
+	WriteErrorWithStatus(w, err, statusForError(err))
+}
+
+// WriteErrorWithStatus 将业务错误按指定 HTTP status 写为统一错误响应。
+func WriteErrorWithStatus(w http.ResponseWriter, err error, statusCode int) {
 	appErr := normalizeError(err)
-	writeJSON(w, http.StatusOK, responseEnvelope{
+	writeJSON(w, statusCode, responseEnvelope{
 		Data: nil,
 		Error: &errorResponse{
 			Code:    appErr.ErrorCode(),
 			Message: appErr.DisplayMessage(),
 		},
 	})
+}
+
+func statusForError(err error) int {
+	appErr := normalizeError(err)
+	switch appErr.ErrorCode() {
+	case entity.ErrorCodeUnauthorized:
+		return http.StatusUnauthorized
+	case entity.ErrorCodeForbidden:
+		return http.StatusForbidden
+	case entity.ErrorCodeValidationFailed:
+		return http.StatusBadRequest
+	case entity.ErrorCodePayloadTooLarge:
+		return http.StatusRequestEntityTooLarge
+	default:
+		return http.StatusOK
+	}
 }
 
 func normalizeError(err error) *entity.AppError {
