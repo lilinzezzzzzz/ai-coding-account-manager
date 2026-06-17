@@ -33,6 +33,7 @@ internal/httpserver/            http.Server 构造、timeout 和 header limit
 internal/router/                Chi router、路由注册和 middleware 组装
 internal/middleware/            跨请求 middleware
 internal/httptransport/         HTTP API response envelope 和错误响应适配
+internal/httpcontract/          HTTP API request/response contract 和 mapper
 internal/controller/            HTTP controller
 internal/provider/              provider-neutral contract 和 registry
 internal/entity/                业务实体、值对象和稳定错误码
@@ -52,6 +53,7 @@ client
   -> router/Chi
   -> middleware
   -> controller
+  -> httpcontract
   -> service
   -> dao
   -> model
@@ -62,8 +64,10 @@ client
 - `httpserver` 负责创建带 timeout 和 header limit 的 `http.Server`。
 - `router` 负责注册 Chi route，并把请求交给 middleware 链。
 - `middleware` 处理跨请求通用边界，例如 recovery、安全响应头和请求约束。
-- `controller` 只处理 HTTP 传输层：解析 path、query、body，校验 request DTO，
-  调用 service，并通过 `httptransport` 写出 response。
+- `controller` 只处理 HTTP handler 编排：调用 `httpcontract` 解析 path 和 request
+  DTO，调用 service，并通过 `httptransport` 写出 response。
+- `httpcontract` 定义 HTTP API request/response DTO、path 参数解析和
+  entity/service view 到 response 的 mapper。
 - `httptransport` 负责 `/api/*` 的统一 response envelope 和错误码映射。
   API 业务错误不依赖 HTTP status 区分，统一通过 `error.code` 表达。
 - `service` 负责业务用例编排、事务边界、DAO 调用顺序和外部 provider 协调。

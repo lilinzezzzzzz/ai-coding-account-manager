@@ -3,25 +3,10 @@ package controller
 import (
 	"net/http"
 
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httpcontract"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httptransport"
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
-
-type providerResponse struct {
-	ID           string             `json:"id"`
-	DisplayName  string             `json:"displayName"`
-	Capabilities capabilityResponse `json:"capabilities"`
-	Status       provider.Status    `json:"status"`
-	ErrorCode    *entity.ErrorCode  `json:"errorCode"`
-}
-
-type capabilityResponse struct {
-	CanRefreshUsage                   bool `json:"canRefreshUsage"`
-	CanActivateAccount                bool `json:"canActivateAccount"`
-	RequiresClientReloadAfterActivate bool `json:"requiresClientReloadAfterActivate"`
-}
 
 // ProviderController 处理 provider 查询 API。
 type ProviderController struct {
@@ -36,24 +21,10 @@ func NewProviderController(providers service.ProviderService) ProviderController
 // ListProviders 返回 provider 列表。
 func (controller ProviderController) ListProviders(w http.ResponseWriter, r *http.Request) error {
 	descriptions := controller.providers.ListProviders(r.Context())
-	response := make([]providerResponse, 0, len(descriptions))
+	response := make([]httpcontract.ProviderResponse, 0, len(descriptions))
 	for _, description := range descriptions {
-		response = append(response, providerToResponse(description))
+		response = append(response, httpcontract.ProviderHTTPResponse(description))
 	}
 	httptransport.WriteOK(w, response)
 	return nil
-}
-
-func providerToResponse(description provider.Description) providerResponse {
-	return providerResponse{
-		ID:          description.ID,
-		DisplayName: description.DisplayName,
-		Capabilities: capabilityResponse{
-			CanRefreshUsage:                   description.Capabilities.CanRefreshUsage,
-			CanActivateAccount:                description.Capabilities.CanActivateAccount,
-			RequiresClientReloadAfterActivate: description.Capabilities.RequiresClientReloadAfterActivate,
-		},
-		Status:    description.Status,
-		ErrorCode: description.ErrorCode,
-	}
 }

@@ -90,8 +90,8 @@ HTTP router 使用 Chi。Chi router 作为 `http.Handler` 运行在 Go 标准库
 - `embed.FS`：将 HTML、CSS、JavaScript 和 migration 编译进二进制。
 - `log/slog`：结构化、可脱敏日志。
 
-Chi 只允许存在于 router、controller 和 middleware 层；GORM 只允许存在于
-`internal/model`、`internal/dao` 和 `internal/infra/database`。service 和业务
+Chi 只允许存在于 router、httpcontract 和 middleware 层；GORM 只允许存在于
+`internal/model`、`internal/dao` 和 `internal/infra/database`。controller、service 和业务
 entity 不依赖 `chi.Context`、`*gorm.DB` 或 GORM model。项目采用
 轻量 MVC 目录结构；
 前端静态页面只作为本地管理 UI，不引入独立前端 View 框架。
@@ -189,7 +189,9 @@ CredentialStore
 | `internal/config` | 配置读取和启动参数校验 |
 | `internal/httpserver` | `http.Server` 构造、timeout 和 header limit 配置 |
 | `internal/router` | Chi Router、路由注册和 middleware 组装 |
-| `internal/controller` | HTTP controller、request DTO、response envelope 和错误映射 |
+| `internal/httpcontract` | HTTP API request/response DTO、mapper 和 path 参数解析 |
+| `internal/httptransport` | HTTP response envelope、strict JSON decode 和错误映射 |
+| `internal/controller` | HTTP controller，负责 handler 编排和调用 service |
 | `internal/entity` | 业务实体、值对象和稳定错误码 |
 | `internal/model` | 与数据库表对应的 GORM 持久化模型 |
 | `internal/service` | 编排账号生命周期、事务边界和稳定错误码 |
@@ -209,10 +211,14 @@ service、entity、model 和 dao 不依赖具体 provider、app-server 或 crede
 
 ```text
 Controller
-  ├─ 解析 path/query/body
-  ├─ transport validation
+  ├─ 调用 httpcontract 解析 path 和 request DTO
   ├─ 调用 Service
   └─ entity/service error -> HTTP error envelope
+
+HTTP Contract
+  ├─ request/response DTO
+  ├─ path 参数解析
+  └─ entity/service view -> HTTP response mapper
 
 Service
   ├─ 业务编排
@@ -763,6 +769,7 @@ ai-coding-account-manager/
 │   ├── httpserver/
 │   ├── router/
 │   ├── controller/
+│   ├── httpcontract/
 │   ├── entity/
 │   ├── model/
 │   ├── service/
