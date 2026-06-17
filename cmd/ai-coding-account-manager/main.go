@@ -151,7 +151,6 @@ func registerProviders(ctx context.Context, providerRegistry *provider.Registry,
 	}
 	codexProvider, err := codex.New(codex.Config{
 		Bin:         cfg.CodexBin,
-		CodexHome:   cfg.CodexHome,
 		Credentials: credentialStore,
 	})
 	if err != nil {
@@ -168,6 +167,7 @@ func newDefaultFakeProvider() provider.Provider {
 	account := entity.Account{
 		ProviderID: "codex",
 		AccountID:  "fake-codex-account",
+		StorageID:  entity.StorageIDForAccount("codex", "fake-codex-account"),
 		Label:      "Fake Codex Account",
 		Email:      stringPtr("fake@example.local"),
 		PlanType:   stringPtr("fake"),
@@ -176,8 +176,7 @@ func newDefaultFakeProvider() provider.Provider {
 		ID:          "codex",
 		DisplayName: "OpenAI Codex",
 		Accounts: []fake.AccountState{{
-			Account:   account,
-			IsCurrent: true,
+			Account: account,
 			Usage: entity.UsageSnapshot{
 				Status:      entity.UsageStatusReady,
 				UsedPercent: &usedPercent,

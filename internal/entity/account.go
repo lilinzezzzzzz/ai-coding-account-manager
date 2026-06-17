@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 )
 
 const storageIDHexLength = 32
@@ -56,4 +57,10 @@ type UsageSnapshot struct {
 func StorageIDForAccount(providerID string, accountID string) string {
 	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s", providerID, accountID)))
 	return hex.EncodeToString(sum[:])[:storageIDHexLength]
+}
+
+// AccountIDFromEmail 根据 OpenAI 邮箱生成稳定账号 ID。
+func AccountIDFromEmail(email string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
+	return "chatgpt-" + hex.EncodeToString(sum[:])[:20]
 }

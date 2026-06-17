@@ -50,8 +50,8 @@ func TestFakeProviderRefreshesConfiguredUsageStates(t *testing.T) {
 func TestFakeProviderUnsupportedCapability(t *testing.T) {
 	fakeProvider := fake.New(fake.Config{
 		Capabilities: provider.Capabilities{
-			CanLogin:        true,
-			CanRefreshUsage: false,
+			CanRefreshUsage:    false,
+			CanActivateAccount: true,
 		},
 		Accounts: []fake.AccountState{{
 			Account: testAccount("fake", "acct-1"),
@@ -78,65 +78,27 @@ func TestFakeProviderUnavailable(t *testing.T) {
 		t.Fatalf("Status = %q, want unavailable", description.Status)
 	}
 
-	_, err = fakeProvider.DiscoverCurrentAccount(context.Background())
+	_, err = fakeProvider.RefreshAccount(context.Background(), testAccount("fake", "acct-1"))
 	assertAppErrorCode(t, err, entity.ErrorCodeUnavailable)
 }
 
-func TestFakeProviderCurrentActivateRemoveAndLogin(t *testing.T) {
+func TestFakeProviderActivateAndRemove(t *testing.T) {
 	first := testAccount("fake", "acct-1")
 	second := testAccount("fake", "acct-2")
 	fakeProvider := fake.New(fake.Config{
 		Accounts: []fake.AccountState{
-			{Account: first, IsCurrent: true},
+			{Account: first},
 			{Account: second},
 		},
 	})
 
-	current, err := fakeProvider.DiscoverCurrentAccount(context.Background())
-	if err != nil {
-		t.Fatalf("DiscoverCurrentAccount() error = %v", err)
-	}
-	if current.AccountID != "acct-1" {
-		t.Fatalf("current account = %q, want acct-1", current.AccountID)
-	}
-
 	if err := fakeProvider.ActivateAccount(context.Background(), second); err != nil {
 		t.Fatalf("ActivateAccount() error = %v", err)
 	}
-	current, err = fakeProvider.DiscoverCurrentAccount(context.Background())
-	if err != nil {
-		t.Fatalf("DiscoverCurrentAccount() after activate error = %v", err)
-	}
-	if current.AccountID != "acct-2" {
-		t.Fatalf("current account = %q, want acct-2", current.AccountID)
-	}
-
-	task, err := fakeProvider.StartLogin(context.Background())
-	if err != nil {
-		t.Fatalf("StartLogin() error = %v", err)
-	}
-	status, err := fakeProvider.PollLogin(context.Background(), task.ID)
-	if err != nil {
-		t.Fatalf("PollLogin() error = %v", err)
-	}
-	if status.State != provider.LoginStatePending {
-		t.Fatalf("login state = %q, want pending", status.State)
-	}
-	if err := fakeProvider.CancelLogin(context.Background(), task.ID); err != nil {
-		t.Fatalf("CancelLogin() error = %v", err)
-	}
-	status, err = fakeProvider.PollLogin(context.Background(), task.ID)
-	if err != nil {
-		t.Fatalf("PollLogin() after cancel error = %v", err)
-	}
-	if status.State != provider.LoginStateCanceled {
-		t.Fatalf("login state = %q, want canceled", status.State)
-	}
-
 	if err := fakeProvider.RemoveAccountData(context.Background(), second); err != nil {
 		t.Fatalf("RemoveAccountData() error = %v", err)
 	}
-	_, err = fakeProvider.DiscoverCurrentAccount(context.Background())
+	err := fakeProvider.ActivateAccount(context.Background(), second)
 	assertAppErrorCode(t, err, entity.ErrorCodeNotFound)
 }
 

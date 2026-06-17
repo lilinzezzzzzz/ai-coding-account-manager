@@ -2,18 +2,12 @@ const state = {
   providers: [],
   accounts: [],
   loading: false,
-  loginTimers: new Map(),
 };
 
 const elements = {
   message: document.querySelector("#message"),
   providers: document.querySelector("#providers"),
-  refreshButton: document.querySelector("#refresh-button"),
-  importButton: document.querySelector("#import-button"),
 };
-
-elements.refreshButton.addEventListener("click", () => refreshUsage());
-elements.importButton.addEventListener("click", () => importCurrentAccount());
 
 boot();
 
@@ -40,71 +34,32 @@ async function loadData() {
   }
 }
 
-async function importCurrentAccount() {
-  const providerId = primaryProviderId();
-  if (!providerId) {
-    showMessage("没有可用 provider", true);
+async function createAccount(providerId) {
+  const email = window.prompt("OpenAI 账号邮箱");
+  if (email === null) {
+    return;
+  }
+  const trimmed = email.trim();
+  if (!isValidEmail(trimmed)) {
+    showMessage("OpenAI 账号邮箱无效", true);
     return;
   }
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/import-current`, {
+    await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/create`, {
       method: "POST",
-      body: {},
+      body: { email: trimmed },
     });
-    showMessage("当前账号已保存");
+    showMessage("账号已新增");
     await loadData();
   });
 }
 
-async function startLogin(providerId) {
+async function refreshAccountUsage(account) {
   await runAction(async () => {
-    const task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/create`, {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
       method: "POST",
       body: {},
     });
-    if (task.authUrl) {
-      window.open(task.authUrl, "_blank", "noopener,noreferrer");
-    }
-    showMessage("登录页面已打开，完成后会自动刷新账号列表");
-    scheduleLoginPoll(task.id);
-  });
-}
-
-function scheduleLoginPoll(taskId) {
-  clearLoginPoll(taskId);
-  const timer = window.setInterval(async () => {
-    try {
-      const status = await api(`/api/login-tasks/${encodeURIComponent(taskId)}`, {
-        method: "GET",
-      });
-      if (status.state === "completed") {
-        clearLoginPoll(taskId);
-        showMessage("新账号已保存。切换账号后请 reload VS Code 窗口。");
-        await loadData();
-      }
-      if (status.state === "failed" || status.state === "canceled") {
-        clearLoginPoll(taskId);
-        showMessage(`登录任务已结束：${status.state}`, status.state === "failed");
-      }
-    } catch (error) {
-      clearLoginPoll(taskId);
-      showMessage(error.message || "轮询登录任务失败", true);
-    }
-  }, 2500);
-  state.loginTimers.set(taskId, timer);
-}
-
-function clearLoginPoll(taskId) {
-  const timer = state.loginTimers.get(taskId);
-  if (timer) {
-    window.clearInterval(timer);
-    state.loginTimers.delete(taskId);
-  }
-}
-
-async function refreshUsage() {
-  await runAction(async () => {
-    await api("/api/usage/refresh", { method: "POST", body: {} });
     showMessage("额度已刷新");
     await loadData();
   });
@@ -207,7 +162,7 @@ function render() {
 
     const accounts = state.accounts.filter((account) => account.providerId === providerInfo.id);
     if (accounts.length === 0) {
-      section.append(emptyState("还没有账号", "保存当前账号，或新增一个 Codex 登录。"));
+      section.append(emptyState("还没有账号", "新增一个 OpenAI 账号。"));
     } else {
       const grid = document.createElement("div");
       grid.className = "account-grid";
@@ -225,24 +180,19 @@ function providerTitle(providerInfo) {
   wrapper.className = "provider-title";
   const title = document.createElement("h2");
   title.textContent = providerInfo.displayName || providerInfo.id;
-  const badge = document.createElement("span");
-  badge.className = `status-badge ${providerInfo.status === "available" ? "" : "unavailable"}`;
-  badge.textContent = providerInfo.status;
-  wrapper.append(title, badge);
+  wrapper.append(title);
   return wrapper;
 }
 
 function providerActions(providerInfo) {
   const actions = document.createElement("div");
   actions.className = "toolbar";
-  if (providerInfo.capabilities && providerInfo.capabilities.canLogin) {
-    const loginButton = document.createElement("button");
-    loginButton.type = "button";
-    loginButton.textContent = "新增登录";
-    loginButton.disabled = state.loading || providerInfo.status !== "available";
-    loginButton.addEventListener("click", () => startLogin(providerInfo.id));
-    actions.append(loginButton);
-  }
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.textContent = "新增账号";
+  addButton.disabled = state.loading;
+  addButton.addEventListener("click", () => createAccount(providerInfo.id));
+  actions.append(addButton);
   return actions;
 }
 
@@ -278,6 +228,7 @@ function accountCard(account, providerInfo) {
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
+  actions.append(actionButton("刷新额度", () => refreshAccountUsage(account)));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(actionButton("激活", () => activateAccount(account)));
   }
@@ -355,13 +306,10 @@ function showMessage(text, isError = false) {
 
 function setLoading(loading) {
   state.loading = loading;
-  elements.refreshButton.disabled = loading;
-  elements.importButton.disabled = loading;
 }
 
-function primaryProviderId() {
-  const available = state.providers.find((providerInfo) => providerInfo.status === "available");
-  return available ? available.id : "";
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function shortId(value) {

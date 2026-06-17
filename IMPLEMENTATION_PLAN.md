@@ -13,13 +13,13 @@ Docker 本地启动和脚本启动能力均已落地。
 ## 2. 执行原则
 
 - 每项剩余工作必须有可运行或可验证的交付物。
-- 不把 token、完整 `auth.json` 或 OAuth URL 写入数据库、日志、前端存储、Git
+- 不把 token 或完整 `auth.json` 写入数据库、日志、前端存储、Git
   工作区或 Docker image layer。
 - Controller 只处理 HTTP 边界，业务编排在 service，GORM 表模型在 model，
   数据访问、model/entity 转换和持久化错误映射在 DAO。
 - 数据库 schema 以 SQL migration 为唯一事实来源，禁止用 `AutoMigrate` 作为正式
   启动流程。
-- 所有 I/O、app-server、OAuth 和文件操作必须在数据库事务外执行。
+- 所有 I/O、app-server 和文件操作必须在数据库事务外执行。
 - 不能用代码阅读代替测试结果；验收结论必须来自实际命令输出或人工记录。
 
 ## 3. Phase 9：完整验收
@@ -54,14 +54,14 @@ docker compose build
 人工验收：
 
 1. 启动本地服务并打开管理页面。
-2. 保存当前账号 A。
+2. 输入 OpenAI 邮箱新增账号 A。
 3. 新增账号 B、C。
 4. 页面同时显示 A、B、C 的额度与重置时间。
 5. 切换到 B，页面提示 reload。
 6. 在 VS Code 执行 `Developer: Reload Window`。
 7. Codex `/status` 显示 B 的账号和额度。
 8. A -> B -> C -> A 切换均可恢复。
-9. refresh token 更新后仍可切回对应账号。
+9. 在账号列表内刷新额度后，当前额度状态正确展示。
 10. 删除非活动账号后对应私有凭证目录被清理。
 11. `git status` 不出现任何凭证文件。
 12. 从其他网页构造 localhost 写请求时被拒绝。

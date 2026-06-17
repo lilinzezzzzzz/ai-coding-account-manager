@@ -86,22 +86,6 @@ func (stub *stubProvider) Describe(context.Context) (Description, error) {
 	return stub.description, nil
 }
 
-func (stub *stubProvider) DiscoverCurrentAccount(context.Context) (*entity.Account, error) {
-	return nil, Unsupported()
-}
-
-func (stub *stubProvider) StartLogin(context.Context) (*LoginTask, error) {
-	return nil, Unsupported()
-}
-
-func (stub *stubProvider) PollLogin(context.Context, string) (*LoginStatus, error) {
-	return nil, Unsupported()
-}
-
-func (stub *stubProvider) CancelLogin(context.Context, string) error {
-	return Unsupported()
-}
-
 func (stub *stubProvider) RefreshAccount(context.Context, entity.Account) (*entity.UsageSnapshot, error) {
 	return nil, Unsupported()
 }

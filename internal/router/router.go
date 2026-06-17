@@ -72,15 +72,12 @@ func registerAccountRoutes(router chi.Router, accountController controller.Accou
 	jsonMutation = append(jsonMutation, middleware.RequireJSONContentType, middleware.LimitBodySize)
 
 	router.Get("/accounts", httptransport.Handle(accountController.ListAccounts))
-	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/import-current", httptransport.Handle(accountController.ImportCurrentAccount))
+	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/create", httptransport.Handle(accountController.CreateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/activate", httptransport.Handle(accountController.ActivateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/rename", httptransport.Handle(accountController.RenameAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/relogin", httptransport.Handle(accountController.ReloginAccount))
+	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/usage/refresh", httptransport.Handle(accountController.RefreshAccountUsage))
 	router.With(mutation...).Delete("/providers/{providerId}/accounts/{accountId}", httptransport.Handle(accountController.DeleteAccount))
-	router.With(jsonMutation...).Post("/providers/{providerId}/login-tasks/create", httptransport.Handle(accountController.StartLogin))
-	router.Get("/login-tasks/{id}", httptransport.Handle(accountController.PollLogin))
-	router.With(mutation...).Delete("/login-tasks/{id}", httptransport.Handle(accountController.CancelLogin))
-	router.With(jsonMutation...).Post("/usage/refresh", httptransport.Handle(accountController.RefreshUsage))
 }
 
 func registerFrontendRoutes(router chi.Router) {

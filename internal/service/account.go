@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,12 @@ type RefreshResult struct {
 	ErrorCode  *entity.ErrorCode
 }
 
+// CreateManualAccountInput 表示手动创建账号所需输入。
+type CreateManualAccountInput struct {
+	ProviderID string
+	Email      string
+}
+
 // AccountService 编排账号生命周期、DAO 事务和 provider 调用。
 type AccountService struct {
 	uow       dao.UnitOfWork
@@ -34,22 +41,15 @@ type AccountService struct {
 	now       func() time.Time
 
 	activateMu sync.Mutex
-
-	refreshMu  sync.Mutex
-	refreshing bool
-
-	loginMu    sync.Mutex
-	loginTasks map[string]string
 }
 
 // NewAccountService 创建账号 service。
 func NewAccountService(uow dao.UnitOfWork, daos dao.DAOs, providers *provider.Registry) *AccountService {
 	return &AccountService{
-		uow:        uow,
-		daos:       daos,
-		providers:  providers,
-		now:        time.Now,
-		loginTasks: map[string]string{},
+		uow:       uow,
+		daos:      daos,
+		providers: providers,
+		now:       time.Now,
 	}
 }
 
@@ -80,48 +80,31 @@ func (service *AccountService) ListAccounts(ctx context.Context) ([]AccountWithU
 	return result, nil
 }
 
-// ImportCurrentAccount 从 provider 导入当前账号并设为 active。
-func (service *AccountService) ImportCurrentAccount(ctx context.Context, providerID string) (AccountWithUsage, error) {
-	registeredProvider, err := service.getProvider(providerID)
-	if err != nil {
+// CreateManualAccount 根据 OpenAI 邮箱创建本地账号元数据。
+func (service *AccountService) CreateManualAccount(ctx context.Context, input CreateManualAccountInput) (AccountWithUsage, error) {
+	if _, err := service.getProvider(input.ProviderID); err != nil {
 		return AccountWithUsage{}, err
 	}
-
-	account, err := registeredProvider.DiscoverCurrentAccount(ctx)
-	if err != nil {
-		return AccountWithUsage{}, err
+	email := strings.TrimSpace(input.Email)
+	if email == "" {
+		return AccountWithUsage{}, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "email 不能为空")
 	}
-	normalizedAccount := service.normalizeAccount(providerID, *account)
-
-	var usage *entity.UsageSnapshot
-	if snapshot, err := registeredProvider.RefreshAccount(ctx, normalizedAccount); err == nil && snapshot != nil {
-		normalizedSnapshot := normalizeUsageSnapshot(normalizedAccount, *snapshot)
-		usage = &normalizedSnapshot
-	}
-
-	err = service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
-		accountForUpsert := normalizedAccount
-		accountForUpsert.IsActive = false
-		if err := daos.Accounts.Upsert(ctx, accountForUpsert); err != nil {
-			return err
-		}
-		if err := daos.Accounts.SetActive(ctx, normalizedAccount.ProviderID, normalizedAccount.AccountID, service.now().UTC().UnixMilli()); err != nil {
-			return err
-		}
-		if usage != nil {
-			return daos.UsageSnapshots.Upsert(ctx, *usage)
-		}
-		return nil
+	accountID := entity.AccountIDFromEmail(email)
+	account := service.normalizeAccount(input.ProviderID, entity.Account{
+		ProviderID: input.ProviderID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(input.ProviderID, accountID),
+		Label:      email,
+		Email:      &email,
 	})
+	if err := service.daos.Accounts.Upsert(ctx, account); err != nil {
+		return AccountWithUsage{}, err
+	}
+	persisted, err := service.daos.Accounts.Get(ctx, account.ProviderID, account.AccountID)
 	if err != nil {
 		return AccountWithUsage{}, err
 	}
-
-	persisted, err := service.daos.Accounts.Get(ctx, normalizedAccount.ProviderID, normalizedAccount.AccountID)
-	if err != nil {
-		return AccountWithUsage{}, err
-	}
-	return AccountWithUsage{Account: persisted, Usage: usage}, nil
+	return AccountWithUsage{Account: persisted}, nil
 }
 
 // RenameAccount 更新账号 label。
@@ -180,129 +163,13 @@ func (service *AccountService) DeleteAccount(ctx context.Context, providerID str
 	return registeredProvider.RemoveAccountData(ctx, account)
 }
 
-// StartLogin 启动 provider 登录任务。
-func (service *AccountService) StartLogin(ctx context.Context, providerID string) (*provider.LoginTask, error) {
-	registeredProvider, err := service.getProvider(providerID)
+// RefreshAccountUsage 刷新单个账号 usage。
+func (service *AccountService) RefreshAccountUsage(ctx context.Context, providerID string, accountID string) (RefreshResult, error) {
+	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
 	if err != nil {
-		return nil, err
+		return RefreshResult{}, err
 	}
-	task, err := registeredProvider.StartLogin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	service.loginMu.Lock()
-	service.loginTasks[task.ID] = providerID
-	service.loginMu.Unlock()
-	return task, nil
-}
-
-// PollLogin 查询登录任务。
-func (service *AccountService) PollLogin(ctx context.Context, taskID string) (*provider.LoginStatus, error) {
-	providerID, err := service.providerIDForTask(taskID)
-	if err != nil {
-		return nil, err
-	}
-	registeredProvider, err := service.getProvider(providerID)
-	if err != nil {
-		return nil, err
-	}
-	status, err := registeredProvider.PollLogin(ctx, taskID)
-	if err != nil {
-		return nil, err
-	}
-	if status.State != provider.LoginStateCompleted || status.Account == nil {
-		return status, nil
-	}
-
-	normalizedAccount := service.normalizeAccount(providerID, *status.Account)
-	if err := service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
-		accountForUpsert := normalizedAccount
-		accountForUpsert.IsActive = false
-		if err := daos.Accounts.Upsert(ctx, accountForUpsert); err != nil {
-			return err
-		}
-		return daos.Accounts.SetActive(ctx, normalizedAccount.ProviderID, normalizedAccount.AccountID, service.now().UTC().UnixMilli())
-	}); err != nil {
-		_ = registeredProvider.RemoveAccountData(context.Background(), normalizedAccount)
-		return nil, err
-	}
-
-	service.loginMu.Lock()
-	delete(service.loginTasks, taskID)
-	service.loginMu.Unlock()
-	status.Account = &normalizedAccount
-	return status, nil
-}
-
-// CancelLogin 取消登录任务。
-func (service *AccountService) CancelLogin(ctx context.Context, taskID string) error {
-	providerID, err := service.providerIDForTask(taskID)
-	if err != nil {
-		return err
-	}
-	registeredProvider, err := service.getProvider(providerID)
-	if err != nil {
-		return err
-	}
-	if err := registeredProvider.CancelLogin(ctx, taskID); err != nil {
-		return err
-	}
-	service.loginMu.Lock()
-	delete(service.loginTasks, taskID)
-	service.loginMu.Unlock()
-	return nil
-}
-
-// RefreshAllUsage 刷新全部账号 usage。单账号失败不会阻断其它账号。
-func (service *AccountService) RefreshAllUsage(ctx context.Context) ([]RefreshResult, error) {
-	service.refreshMu.Lock()
-	if service.refreshing {
-		service.refreshMu.Unlock()
-		return nil, entity.NewAppError(entity.ErrorCodeOperationInProgress)
-	}
-	service.refreshing = true
-	service.refreshMu.Unlock()
-	defer func() {
-		service.refreshMu.Lock()
-		service.refreshing = false
-		service.refreshMu.Unlock()
-	}()
-
-	accounts, err := service.daos.Accounts.ListAll(ctx, defaultAccountListLimit)
-	if err != nil {
-		return nil, err
-	}
-
-	results := make([]RefreshResult, 0, len(accounts))
-	if len(accounts) == 0 {
-		return results, nil
-	}
-	results = make([]RefreshResult, len(accounts))
-	semaphore := make(chan struct{}, 2)
-	var wg sync.WaitGroup
-	for index, account := range accounts {
-		index, account := index, account
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			select {
-			case semaphore <- struct{}{}:
-				defer func() {
-					<-semaphore
-				}()
-				results[index] = service.refreshOne(ctx, account)
-			case <-ctx.Done():
-				code := entity.ErrorCodeUnavailable
-				results[index] = RefreshResult{
-					ProviderID: account.ProviderID,
-					AccountID:  account.AccountID,
-					ErrorCode:  &code,
-				}
-			}
-		}()
-	}
-	wg.Wait()
-	return results, nil
+	return service.refreshOne(ctx, account), nil
 }
 
 func (service *AccountService) refreshOne(ctx context.Context, account entity.Account) RefreshResult {
@@ -374,17 +241,6 @@ func (service *AccountService) getProvider(providerID string) (provider.Provider
 		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
 	}
 	return registeredProvider, nil
-}
-
-func (service *AccountService) providerIDForTask(taskID string) (string, error) {
-	service.loginMu.Lock()
-	defer service.loginMu.Unlock()
-
-	providerID, ok := service.loginTasks[taskID]
-	if !ok {
-		return "", entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	return providerID, nil
 }
 
 func errorCodePtr(err error) *entity.ErrorCode {

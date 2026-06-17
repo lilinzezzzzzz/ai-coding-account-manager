@@ -18,8 +18,6 @@ type providerResponse struct {
 }
 
 type capabilityResponse struct {
-	CanImportCurrentAccount           bool `json:"canImportCurrentAccount"`
-	CanLogin                          bool `json:"canLogin"`
 	CanRefreshUsage                   bool `json:"canRefreshUsage"`
 	CanActivateAccount                bool `json:"canActivateAccount"`
 	RequiresClientReloadAfterActivate bool `json:"requiresClientReloadAfterActivate"`
@@ -51,8 +49,6 @@ func providerToResponse(description provider.Description) providerResponse {
 		ID:          description.ID,
 		DisplayName: description.DisplayName,
 		Capabilities: capabilityResponse{
-			CanImportCurrentAccount:           description.Capabilities.CanImportCurrentAccount,
-			CanLogin:                          description.Capabilities.CanLogin,
 			CanRefreshUsage:                   description.Capabilities.CanRefreshUsage,
 			CanActivateAccount:                description.Capabilities.CanActivateAccount,
 			RequiresClientReloadAfterActivate: description.Capabilities.RequiresClientReloadAfterActivate,

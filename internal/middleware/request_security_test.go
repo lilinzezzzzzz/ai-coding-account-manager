@@ -17,7 +17,7 @@ func TestMutationBoundaryAllowsSameOriginJSONRequest(t *testing.T) {
 	}))
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/accounts/import-current", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/create", strings.NewReader(`{}`))
 	request.Host = "127.0.0.1:43127"
 	request.Header.Set("Origin", "http://127.0.0.1:43127")
 	request.Header.Set("Content-Type", "application/json")
@@ -35,7 +35,7 @@ func TestMutationBoundaryRejectsInvalidOrigin(t *testing.T) {
 	}))
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/accounts/import-current", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/create", strings.NewReader(`{}`))
 	request.Host = "127.0.0.1:43127"
 	request.Header.Set("Origin", "http://evil.test:43127")
 	request.Header.Set("Content-Type", "application/json")
@@ -53,7 +53,7 @@ func TestMutationBoundaryRejectsAllowedButMismatchedOrigin(t *testing.T) {
 	}))
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/accounts/import-current", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/create", strings.NewReader(`{}`))
 	request.Host = "127.0.0.1:43127"
 	request.Header.Set("Origin", "http://localhost:43127")
 	request.Header.Set("Content-Type", "application/json")
@@ -71,7 +71,7 @@ func TestMutationBoundaryRejectsMissingOrigin(t *testing.T) {
 	}))
 
 	response := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, "/api/accounts/import-current", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/create", strings.NewReader(`{}`))
 	request.Host = "127.0.0.1:43127"
 	request.Header.Set("Content-Type", "application/json")
 	handler.ServeHTTP(response, request)

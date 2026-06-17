@@ -205,7 +205,7 @@ error != null 表示业务失败，按 error.code 分支处理
 - 写请求需要同源 Origin、`Content-Type: application/json`，并限制请求体不超过
   16 KiB。
 - JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
-- 不把 token、完整 `auth.json` 或 OAuth URL 写入数据库、项目文件、浏览器持久化
-  存储或 API 响应。
+- 不把 token 或完整 `auth.json` 写入数据库、项目文件、浏览器持久化存储或 API
+  响应。
 - Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
   边界内。

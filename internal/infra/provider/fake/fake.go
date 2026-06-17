@@ -2,7 +2,6 @@ package fake
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -12,9 +11,8 @@ import (
 
 // AccountState 描述 fake provider 中的一个账号及其 usage 状态。
 type AccountState struct {
-	Account   entity.Account
-	Usage     entity.UsageSnapshot
-	IsCurrent bool
+	Account entity.Account
+	Usage   entity.UsageSnapshot
 }
 
 // Config 保存 fake provider 构造参数。
@@ -36,9 +34,6 @@ type Provider struct {
 	unavailable   bool
 	accounts      map[string]entity.Account
 	usages        map[string]entity.UsageSnapshot
-	currentKey    string
-	loginTasks    map[string]provider.LoginStatus
-	nextTaskID    int
 	closed        bool
 }
 
@@ -68,7 +63,6 @@ func New(cfg Config) *Provider {
 		unavailable:   cfg.Unavailable,
 		accounts:      map[string]entity.Account{},
 		usages:        map[string]entity.UsageSnapshot{},
-		loginTasks:    map[string]provider.LoginStatus{},
 	}
 	for _, state := range cfg.Accounts {
 		account := state.Account
@@ -93,9 +87,6 @@ func New(cfg Config) *Provider {
 		}
 		fakeProvider.usages[key] = usage
 
-		if state.IsCurrent {
-			fakeProvider.currentKey = key
-		}
 	}
 	return fakeProvider
 }
@@ -103,8 +94,6 @@ func New(cfg Config) *Provider {
 // DefaultCapabilities 返回 fake provider 默认支持的能力。
 func DefaultCapabilities() provider.Capabilities {
 	return provider.Capabilities{
-		CanImportCurrentAccount:           true,
-		CanLogin:                          true,
 		CanRefreshUsage:                   true,
 		CanActivateAccount:                true,
 		RequiresClientReloadAfterActivate: true,
@@ -128,82 +117,6 @@ func (fakeProvider *Provider) Describe(context.Context) (provider.Description, e
 	return description, nil
 }
 
-// DiscoverCurrentAccount 返回当前 fake 账号。
-func (fakeProvider *Provider) DiscoverCurrentAccount(context.Context) (*entity.Account, error) {
-	fakeProvider.mu.Lock()
-	defer fakeProvider.mu.Unlock()
-
-	if err := fakeProvider.ensureAvailableLocked(); err != nil {
-		return nil, err
-	}
-	if !fakeProvider.description.Capabilities.CanImportCurrentAccount {
-		return nil, provider.Unsupported()
-	}
-	if fakeProvider.currentKey == "" {
-		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	account := fakeProvider.accounts[fakeProvider.currentKey]
-	return &account, nil
-}
-
-// StartLogin 创建 fake 登录任务。
-func (fakeProvider *Provider) StartLogin(context.Context) (*provider.LoginTask, error) {
-	fakeProvider.mu.Lock()
-	defer fakeProvider.mu.Unlock()
-
-	if err := fakeProvider.ensureAvailableLocked(); err != nil {
-		return nil, err
-	}
-	if !fakeProvider.description.Capabilities.CanLogin {
-		return nil, provider.Unsupported()
-	}
-
-	fakeProvider.nextTaskID++
-	taskID := fmt.Sprintf("fake-login-%d", fakeProvider.nextTaskID)
-	status := provider.LoginStatus{
-		ID:    taskID,
-		State: provider.LoginStatePending,
-	}
-	fakeProvider.loginTasks[taskID] = status
-
-	return &provider.LoginTask{
-		ID:        taskID,
-		ExpiresAt: time.Now().UTC().Add(10 * time.Minute).UnixMilli(),
-	}, nil
-}
-
-// PollLogin 返回 fake 登录任务状态。
-func (fakeProvider *Provider) PollLogin(_ context.Context, taskID string) (*provider.LoginStatus, error) {
-	fakeProvider.mu.Lock()
-	defer fakeProvider.mu.Unlock()
-
-	if err := fakeProvider.ensureAvailableLocked(); err != nil {
-		return nil, err
-	}
-	status, ok := fakeProvider.loginTasks[taskID]
-	if !ok {
-		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	return &status, nil
-}
-
-// CancelLogin 取消 fake 登录任务。
-func (fakeProvider *Provider) CancelLogin(_ context.Context, taskID string) error {
-	fakeProvider.mu.Lock()
-	defer fakeProvider.mu.Unlock()
-
-	if err := fakeProvider.ensureAvailableLocked(); err != nil {
-		return err
-	}
-	status, ok := fakeProvider.loginTasks[taskID]
-	if !ok {
-		return entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	status.State = provider.LoginStateCanceled
-	fakeProvider.loginTasks[taskID] = status
-	return nil
-}
-
 // RefreshAccount 返回账号对应的 fake usage snapshot。
 func (fakeProvider *Provider) RefreshAccount(_ context.Context, account entity.Account) (*entity.UsageSnapshot, error) {
 	fakeProvider.mu.Lock()
@@ -218,7 +131,15 @@ func (fakeProvider *Provider) RefreshAccount(_ context.Context, account entity.A
 	key := accountKey(account.ProviderID, account.AccountID)
 	usage, ok := fakeProvider.usages[key]
 	if !ok {
-		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
+		usedPercent := 0.0
+		usage = entity.UsageSnapshot{
+			ProviderID:  account.ProviderID,
+			AccountID:   account.AccountID,
+			Status:      entity.UsageStatusReady,
+			UsedPercent: &usedPercent,
+			RefreshedAt: time.Now().UTC().UnixMilli(),
+		}
+		fakeProvider.usages[key] = usage
 	}
 	if usage.RefreshedAt == 0 {
 		usage.RefreshedAt = time.Now().UTC().UnixMilli()
@@ -226,7 +147,7 @@ func (fakeProvider *Provider) RefreshAccount(_ context.Context, account entity.A
 	return &usage, nil
 }
 
-// ActivateAccount 将目标账号标记为当前账号。
+// ActivateAccount 校验目标账号可被激活。
 func (fakeProvider *Provider) ActivateAccount(_ context.Context, account entity.Account) error {
 	fakeProvider.mu.Lock()
 	defer fakeProvider.mu.Unlock()
@@ -241,7 +162,6 @@ func (fakeProvider *Provider) ActivateAccount(_ context.Context, account entity.
 	if _, ok := fakeProvider.accounts[key]; !ok {
 		return entity.NewAppError(entity.ErrorCodeNotFound)
 	}
-	fakeProvider.currentKey = key
 	return nil
 }
 
@@ -259,9 +179,6 @@ func (fakeProvider *Provider) RemoveAccountData(_ context.Context, account entit
 	}
 	delete(fakeProvider.accounts, key)
 	delete(fakeProvider.usages, key)
-	if fakeProvider.currentKey == key {
-		fakeProvider.currentKey = ""
-	}
 	return nil
 }
 

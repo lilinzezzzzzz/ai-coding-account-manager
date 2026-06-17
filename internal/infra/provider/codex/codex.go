@@ -2,12 +2,9 @@ package codex
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
@@ -19,7 +16,6 @@ import (
 const (
 	providerID          = "codex"
 	providerDisplayName = "OpenAI Codex"
-	loginTTL            = 10 * time.Minute
 )
 
 type appServerClient interface {
@@ -33,7 +29,6 @@ type ClientFactory func(context.Context, appserver.Config) (appServerClient, err
 // Config 保存 Codex provider 依赖。
 type Config struct {
 	Bin           string
-	CodexHome     string
 	Credentials   *credentials.Store
 	ClientFactory ClientFactory
 	Now           func() time.Time
@@ -42,32 +37,15 @@ type Config struct {
 // Provider 实现 OpenAI Codex 账号 provider。
 type Provider struct {
 	bin         string
-	codexHome   string
 	credentials *credentials.Store
 	newClient   ClientFactory
 	now         func() time.Time
-
-	mu         sync.Mutex
-	loginTasks map[string]*loginTask
-}
-
-type loginTask struct {
-	id         string
-	authURL    string
-	pendingDir string
-	expiresAt  time.Time
-	client     appServerClient
-	cancel     context.CancelFunc
 }
 
 // New 创建 Codex provider。
 func New(cfg Config) (*Provider, error) {
 	if cfg.Credentials == nil {
 		return nil, fmt.Errorf("credentials store is required")
-	}
-	codexHome := cfg.CodexHome
-	if codexHome == "" {
-		codexHome = cfg.Credentials.ActiveCodexDir()
 	}
 	newClient := cfg.ClientFactory
 	if newClient == nil {
@@ -81,11 +59,9 @@ func New(cfg Config) (*Provider, error) {
 	}
 	return &Provider{
 		bin:         cfg.Bin,
-		codexHome:   codexHome,
 		credentials: cfg.Credentials,
 		newClient:   newClient,
 		now:         now,
-		loginTasks:  map[string]*loginTask{},
 	}, nil
 }
 
@@ -95,118 +71,12 @@ func (providerImpl *Provider) Describe(context.Context) (provider.Description, e
 		ID:          providerID,
 		DisplayName: providerDisplayName,
 		Capabilities: provider.Capabilities{
-			CanImportCurrentAccount:           true,
-			CanLogin:                          true,
 			CanRefreshUsage:                   true,
 			CanActivateAccount:                true,
 			RequiresClientReloadAfterActivate: true,
 		},
 		Status: provider.StatusAvailable,
 	}, nil
-}
-
-// DiscoverCurrentAccount 读取活动 CODEX_HOME 当前账号，并保存对应凭据。
-func (providerImpl *Provider) DiscoverCurrentAccount(ctx context.Context) (*entity.Account, error) {
-	client, err := providerImpl.startClient(ctx, providerImpl.codexHome)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		_ = client.Close(context.Background())
-	}()
-
-	account, err := providerImpl.readAccount(ctx, client, false)
-	if err != nil {
-		return nil, err
-	}
-	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, providerImpl.codexHome); err != nil {
-		return nil, entity.WrapAppError(entity.ErrorCodeUnavailable, err)
-	}
-	return account, nil
-}
-
-// StartLogin 创建 Codex ChatGPT 登录任务。
-func (providerImpl *Provider) StartLogin(ctx context.Context) (*provider.LoginTask, error) {
-	pendingDir, err := providerImpl.credentials.NewPendingCodexDir(providerID)
-	if err != nil {
-		return nil, entity.WrapAppError(entity.ErrorCodeUnavailable, err)
-	}
-
-	taskCtx, cancel := context.WithCancel(context.Background())
-	client, err := providerImpl.startClient(taskCtx, pendingDir)
-	if err != nil {
-		cancel()
-		_ = providerImpl.credentials.RemoveCodexDir(context.Background(), pendingDir)
-		return nil, err
-	}
-
-	var response loginStartResponse
-	if err := client.Call(ctx, "account/login/start", loginStartParams{Type: "chatgpt"}, &response); err != nil {
-		_ = client.Close(context.Background())
-		cancel()
-		_ = providerImpl.credentials.RemoveCodexDir(context.Background(), pendingDir)
-		return nil, mapAppServerError("start Codex login", err)
-	}
-	if response.Type != "chatgpt" || response.LoginID == "" || response.AuthURL == "" {
-		_ = client.Close(context.Background())
-		cancel()
-		_ = providerImpl.credentials.RemoveCodexDir(context.Background(), pendingDir)
-		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 登录响应无效")
-	}
-
-	expiresAt := providerImpl.now().UTC().Add(loginTTL)
-	providerImpl.mu.Lock()
-	providerImpl.loginTasks[response.LoginID] = &loginTask{
-		id:         response.LoginID,
-		authURL:    response.AuthURL,
-		pendingDir: pendingDir,
-		expiresAt:  expiresAt,
-		client:     client,
-		cancel:     cancel,
-	}
-	providerImpl.mu.Unlock()
-
-	return &provider.LoginTask{
-		ID:        response.LoginID,
-		AuthURL:   response.AuthURL,
-		ExpiresAt: expiresAt.UnixMilli(),
-	}, nil
-}
-
-// PollLogin 轮询登录任务。完成后把 pending 凭据迁移到正式账号目录。
-func (providerImpl *Provider) PollLogin(ctx context.Context, taskID string) (*provider.LoginStatus, error) {
-	task, err := providerImpl.getLoginTask(taskID)
-	if err != nil {
-		return nil, err
-	}
-	if providerImpl.now().After(task.expiresAt) {
-		_ = providerImpl.finishLoginTask(taskID, true)
-		code := entity.ErrorCodeUnavailable
-		return &provider.LoginStatus{ID: taskID, State: provider.LoginStateFailed, ErrorCode: &code}, nil
-	}
-
-	account, err := providerImpl.readAccount(ctx, task.client, false)
-	if err != nil {
-		if appErr, ok := entity.AsAppError(err); ok && appErr.ErrorCode() == entity.ErrorCodeUnavailable {
-			return &provider.LoginStatus{ID: taskID, State: provider.LoginStatePending}, nil
-		}
-		code := errorCode(err)
-		return &provider.LoginStatus{ID: taskID, State: provider.LoginStateFailed, ErrorCode: &code}, nil
-	}
-	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, task.pendingDir); err != nil {
-		code := entity.ErrorCodeUnavailable
-		return &provider.LoginStatus{ID: taskID, State: provider.LoginStateFailed, ErrorCode: &code}, nil
-	}
-	_ = providerImpl.finishLoginTask(taskID, true)
-	return &provider.LoginStatus{ID: taskID, State: provider.LoginStateCompleted, Account: account}, nil
-}
-
-// CancelLogin 取消登录任务并清理 pending 目录。
-func (providerImpl *Provider) CancelLogin(ctx context.Context, taskID string) error {
-	if err := providerImpl.finishLoginTask(taskID, true); err != nil {
-		return err
-	}
-	return ctx.Err()
 }
 
 // RefreshAccount 使用账号隔离 CODEX_HOME 刷新 usage。
@@ -244,18 +114,8 @@ func (providerImpl *Provider) RemoveAccountData(ctx context.Context, account ent
 	return providerImpl.credentials.RemoveAccount(ctx, providerID, account.StorageID)
 }
 
-// Close 关闭所有未完成登录任务。
+// Close 关闭 provider。
 func (providerImpl *Provider) Close(ctx context.Context) error {
-	providerImpl.mu.Lock()
-	taskIDs := make([]string, 0, len(providerImpl.loginTasks))
-	for taskID := range providerImpl.loginTasks {
-		taskIDs = append(taskIDs, taskID)
-	}
-	providerImpl.mu.Unlock()
-
-	for _, taskID := range taskIDs {
-		_ = providerImpl.finishLoginTask(taskID, true)
-	}
 	return ctx.Err()
 }
 
@@ -279,35 +139,6 @@ func (providerImpl *Provider) readAccount(ctx context.Context, client appServerC
 	return mapAccount(response)
 }
 
-func (providerImpl *Provider) getLoginTask(taskID string) (*loginTask, error) {
-	providerImpl.mu.Lock()
-	defer providerImpl.mu.Unlock()
-
-	task, ok := providerImpl.loginTasks[taskID]
-	if !ok {
-		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	return task, nil
-}
-
-func (providerImpl *Provider) finishLoginTask(taskID string, removePending bool) error {
-	providerImpl.mu.Lock()
-	task, ok := providerImpl.loginTasks[taskID]
-	if ok {
-		delete(providerImpl.loginTasks, taskID)
-	}
-	providerImpl.mu.Unlock()
-	if !ok {
-		return entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	_ = task.client.Close(context.Background())
-	task.cancel()
-	if removePending {
-		_ = providerImpl.credentials.RemoveCodexDir(context.Background(), task.pendingDir)
-	}
-	return nil
-}
-
 func mapAccount(response accountReadResponse) (*entity.Account, error) {
 	if response.Account == nil || response.RequiresOpenaiAuth {
 		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 账号未登录")
@@ -320,7 +151,7 @@ func mapAccount(response accountReadResponse) (*entity.Account, error) {
 		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 账号缺少 email")
 	}
 	planType := strings.TrimSpace(response.Account.PlanType)
-	accountID := accountIDFromEmail(email)
+	accountID := entity.AccountIDFromEmail(email)
 	account := entity.Account{
 		ProviderID: providerID,
 		AccountID:  accountID,
@@ -362,23 +193,11 @@ func mapUsageSnapshot(account entity.Account, response rateLimitsReadResponse, r
 	}, nil
 }
 
-func accountIDFromEmail(email string) string {
-	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(email))))
-	return "chatgpt-" + hex.EncodeToString(sum[:])[:20]
-}
-
 func mapAppServerError(message string, err error) error {
 	if err == nil {
 		return nil
 	}
 	return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, message, err)
-}
-
-func errorCode(err error) entity.ErrorCode {
-	if appErr, ok := entity.AsAppError(err); ok {
-		return appErr.ErrorCode()
-	}
-	return entity.ErrorCodeInternal
 }
 
 type accountReadParams struct {
@@ -394,16 +213,6 @@ type codexAccount struct {
 	Type     string `json:"type"`
 	Email    string `json:"email"`
 	PlanType string `json:"planType"`
-}
-
-type loginStartParams struct {
-	Type string `json:"type"`
-}
-
-type loginStartResponse struct {
-	Type    string `json:"type"`
-	LoginID string `json:"loginId"`
-	AuthURL string `json:"authUrl"`
 }
 
 type rateLimitsReadResponse struct {

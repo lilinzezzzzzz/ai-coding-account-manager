@@ -8,18 +8,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/appserver"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/credentials"
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 )
 
-func TestProviderDiscoversRefreshesAndActivatesAccount(t *testing.T) {
+func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	tempDir := t.TempDir()
 	activeDir := filepath.Join(tempDir, "active")
 	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"active"}}`)
 	store := newTestStore(t, tempDir, activeDir)
+	accountID := entity.AccountIDFromEmail("user@example.com")
+	account := entity.Account{
+		ProviderID: providerID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(providerID, accountID),
+		Label:      "user@example.com",
+	}
+	if err := store.ImportFromCodexDir(context.Background(), providerID, account.StorageID, activeDir); err != nil {
+		t.Fatalf("import account credentials: %v", err)
+	}
 
-	codexProvider := newTestProvider(t, store, activeDir, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
 		return &fakeCodexClient{responses: map[string]any{
 			"account/read": accountReadResponse{
 				Account: &codexAccount{Type: "chatgpt", Email: "user@example.com", PlanType: "plus"},
@@ -33,18 +43,7 @@ func TestProviderDiscoversRefreshesAndActivatesAccount(t *testing.T) {
 		}}, nil
 	})
 
-	account, err := codexProvider.DiscoverCurrentAccount(context.Background())
-	if err != nil {
-		t.Fatalf("discover current account: %v", err)
-	}
-	if account.ProviderID != providerID || account.AccountID == "" || account.StorageID == "" {
-		t.Fatalf("mapped account = %+v", account)
-	}
-	if account.Email == nil || *account.Email != "user@example.com" {
-		t.Fatalf("account email = %v", account.Email)
-	}
-
-	snapshot, err := codexProvider.RefreshAccount(context.Background(), *account)
+	snapshot, err := codexProvider.RefreshAccount(context.Background(), account)
 	if err != nil {
 		t.Fatalf("refresh account: %v", err)
 	}
@@ -56,7 +55,7 @@ func TestProviderDiscoversRefreshesAndActivatesAccount(t *testing.T) {
 	}
 
 	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"old"}}`)
-	if err := codexProvider.ActivateAccount(context.Background(), *account); err != nil {
+	if err := codexProvider.ActivateAccount(context.Background(), account); err != nil {
 		t.Fatalf("activate account: %v", err)
 	}
 	content, err := os.ReadFile(filepath.Join(activeDir, "auth.json"))
@@ -65,50 +64,6 @@ func TestProviderDiscoversRefreshesAndActivatesAccount(t *testing.T) {
 	}
 	if string(content) != `{"tokens":{"access_token":"active"}}` {
 		t.Fatalf("active auth content = %s", content)
-	}
-}
-
-func TestProviderLoginTaskCompletesAndCleansPendingDir(t *testing.T) {
-	tempDir := t.TempDir()
-	activeDir := filepath.Join(tempDir, "active")
-	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"active"}}`)
-	store := newTestStore(t, tempDir, activeDir)
-	var pendingDir string
-
-	codexProvider := newTestProvider(t, store, activeDir, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
-		if cfg.CodexHome != activeDir {
-			pendingDir = cfg.CodexHome
-			writeAuthFile(t, pendingDir, `{"tokens":{"access_token":"new"}}`)
-		}
-		return &fakeCodexClient{responses: map[string]any{
-			"account/login/start": loginStartResponse{
-				Type:    "chatgpt",
-				LoginID: "login-1",
-				AuthURL: "https://auth.example.test/start",
-			},
-			"account/read": accountReadResponse{
-				Account: &codexAccount{Type: "chatgpt", Email: "new@example.com", PlanType: "team"},
-			},
-		}}, nil
-	})
-
-	task, err := codexProvider.StartLogin(context.Background())
-	if err != nil {
-		t.Fatalf("start login: %v", err)
-	}
-	if task.ID != "login-1" || task.AuthURL == "" {
-		t.Fatalf("task = %+v", task)
-	}
-
-	status, err := codexProvider.PollLogin(context.Background(), task.ID)
-	if err != nil {
-		t.Fatalf("poll login: %v", err)
-	}
-	if status.State != provider.LoginStateCompleted || status.Account == nil {
-		t.Fatalf("status = %+v", status)
-	}
-	if _, err := os.Stat(pendingDir); !os.IsNotExist(err) {
-		t.Fatalf("pending dir still exists or stat failed: %v", err)
 	}
 }
 
@@ -134,10 +89,9 @@ func (client *fakeCodexClient) Close(context.Context) error {
 	return nil
 }
 
-func newTestProvider(t *testing.T, store *credentials.Store, activeDir string, factory ClientFactory) *Provider {
+func newTestProvider(t *testing.T, store *credentials.Store, factory ClientFactory) *Provider {
 	t.Helper()
 	codexProvider, err := New(Config{
-		CodexHome:     activeDir,
 		Credentials:   store,
 		ClientFactory: factory,
 		Now: func() time.Time {

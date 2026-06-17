@@ -8,7 +8,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httptransport"
-	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
 
@@ -41,24 +40,15 @@ type renameAccountRequest struct {
 	Label string `json:"label"`
 }
 
+type createAccountRequest struct {
+	Email string `json:"email"`
+}
+
 type refreshResultResponse struct {
 	ProviderID string                 `json:"providerId"`
 	AccountID  string                 `json:"accountId"`
 	Usage      *usageSnapshotResponse `json:"usage"`
 	ErrorCode  *entity.ErrorCode      `json:"errorCode"`
-}
-
-type loginTaskResponse struct {
-	ID        string `json:"id"`
-	AuthURL   string `json:"authUrl,omitempty"`
-	ExpiresAt int64  `json:"expiresAt"`
-}
-
-type loginStatusResponse struct {
-	ID        string              `json:"id"`
-	State     provider.LoginState `json:"state"`
-	Account   *accountResponse    `json:"account"`
-	ErrorCode *entity.ErrorCode   `json:"errorCode"`
 }
 
 // AccountController 处理账号核心 API。
@@ -85,13 +75,24 @@ func (controller AccountController) ListAccounts(w http.ResponseWriter, r *http.
 	return nil
 }
 
-// ImportCurrentAccount 保存当前 provider 账号。
-func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, r *http.Request) error {
+// CreateAccount 根据 OpenAI 账号邮箱创建本地账号。
+func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, err := providerIDFromRequest(r)
 	if err != nil {
 		return err
 	}
-	account, err := controller.accounts.ImportCurrentAccount(r.Context(), providerID)
+	var request createAccountRequest
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	email := strings.TrimSpace(request.Email)
+	if email == "" || len(email) > 254 || !strings.Contains(email, "@") {
+		return entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "email 无效")
+	}
+	account, err := controller.accounts.CreateManualAccount(r.Context(), service.CreateManualAccountInput{
+		ProviderID: providerID,
+		Email:      email,
+	})
 	if err != nil {
 		return err
 	}
@@ -153,71 +154,17 @@ func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
-// StartLogin 创建 provider 登录任务。
-func (controller AccountController) StartLogin(w http.ResponseWriter, r *http.Request) error {
-	providerID, err := providerIDFromRequest(r)
+// RefreshAccountUsage 刷新单个账号 usage。
+func (controller AccountController) RefreshAccountUsage(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := providerAndAccountIDFromRequest(r)
 	if err != nil {
 		return err
 	}
-	task, err := controller.accounts.StartLogin(r.Context(), providerID)
+	result, err := controller.accounts.RefreshAccountUsage(r.Context(), providerID, accountID)
 	if err != nil {
 		return err
 	}
-	httptransport.WriteOK(w, loginTaskResponse{
-		ID:        task.ID,
-		AuthURL:   task.AuthURL,
-		ExpiresAt: task.ExpiresAt,
-	})
-	return nil
-}
-
-// PollLogin 查询登录任务。
-func (controller AccountController) PollLogin(w http.ResponseWriter, r *http.Request) error {
-	taskID, err := taskIDFromRequest(r)
-	if err != nil {
-		return err
-	}
-	status, err := controller.accounts.PollLogin(r.Context(), taskID)
-	if err != nil {
-		return err
-	}
-	response := loginStatusResponse{
-		ID:        status.ID,
-		State:     status.State,
-		ErrorCode: status.ErrorCode,
-	}
-	if status.Account != nil {
-		account := accountToResponse(*status.Account, nil)
-		response.Account = &account
-	}
-	httptransport.WriteOK(w, response)
-	return nil
-}
-
-// CancelLogin 取消登录任务。
-func (controller AccountController) CancelLogin(w http.ResponseWriter, r *http.Request) error {
-	taskID, err := taskIDFromRequest(r)
-	if err != nil {
-		return err
-	}
-	if err := controller.accounts.CancelLogin(r.Context(), taskID); err != nil {
-		return err
-	}
-	httptransport.WriteOK(w, map[string]bool{"canceled": true})
-	return nil
-}
-
-// RefreshUsage 刷新全部账号 usage。
-func (controller AccountController) RefreshUsage(w http.ResponseWriter, r *http.Request) error {
-	results, err := controller.accounts.RefreshAllUsage(r.Context())
-	if err != nil {
-		return err
-	}
-	response := make([]refreshResultResponse, 0, len(results))
-	for _, result := range results {
-		response = append(response, refreshResultToResponse(result))
-	}
-	httptransport.WriteOK(w, response)
+	httptransport.WriteOK(w, refreshResultToResponse(result))
 	return nil
 }
 
@@ -287,12 +234,4 @@ func providerIDFromRequest(r *http.Request) (string, error) {
 		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "providerId 无效")
 	}
 	return providerID, nil
-}
-
-func taskIDFromRequest(r *http.Request) (string, error) {
-	taskID := chi.URLParam(r, "id")
-	if !idPattern.MatchString(taskID) {
-		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "task id 无效")
-	}
-	return taskID, nil
 }

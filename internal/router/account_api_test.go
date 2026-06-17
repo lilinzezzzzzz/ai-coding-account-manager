@@ -1,9 +1,7 @@
 package router_test
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -34,22 +32,16 @@ func TestAccountAPIListAllowsLocalRequest(t *testing.T) {
 	}
 }
 
-func TestAccountAPIImportListRenameActivateDeleteAndRefresh(t *testing.T) {
+func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
-
-	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/import-current", `{}`)
-	if importResponse.Code != http.StatusOK {
-		t.Fatalf("import status = %d, body = %s", importResponse.Code, importResponse.Body.String())
-	}
-	assertBodyDoesNotLeakSensitiveData(t, importResponse.Body.String())
 
 	listResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
 	if listResponse.Code != http.StatusOK {
 		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
 	}
 	if !strings.Contains(listResponse.Body.String(), `"accountId":"acct-1"`) || !strings.Contains(listResponse.Body.String(), `"usage"`) {
-		t.Fatalf("list body = %s, want imported account with usage", listResponse.Body.String())
+		t.Fatalf("list body = %s, want seeded account with usage", listResponse.Body.String())
 	}
 
 	renameResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rename", `{"label":"Primary"}`)
@@ -84,42 +76,53 @@ func TestAccountAPIImportListRenameActivateDeleteAndRefresh(t *testing.T) {
 		t.Fatalf("delete inactive body = %s, want deleted", deleteInactiveResponse.Body.String())
 	}
 
-	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`)
+	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/usage/refresh", `{}`)
 	if refreshResponse.Code != http.StatusOK {
 		t.Fatalf("refresh status = %d, body = %s", refreshResponse.Code, refreshResponse.Body.String())
 	}
-	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"acct-2"`) {
-		t.Fatalf("refresh body = %s, want acct-2 result", refreshResponse.Body.String())
+	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"acct-2"`) || !strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) {
+		t.Fatalf("refresh body = %s, want acct-2 ready usage", refreshResponse.Body.String())
 	}
 }
 
-func TestAccountAPILoginTaskFlow(t *testing.T) {
+func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
 
-	startResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/login-tasks/create", `{}`)
-	if startResponse.Code != http.StatusOK {
-		t.Fatalf("start login status = %d, body = %s", startResponse.Code, startResponse.Body.String())
+	createResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/create", `{"email":"new@example.com"}`)
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("create status = %d, body = %s", createResponse.Code, createResponse.Body.String())
 	}
-	taskID := readStringField(t, startResponse.Body.Bytes(), "id")
-	if taskID == "" {
-		t.Fatalf("task id is empty, body = %s", startResponse.Body.String())
-	}
-
-	pollResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/login-tasks/"+taskID, "")
-	if pollResponse.Code != http.StatusOK {
-		t.Fatalf("poll status = %d, body = %s", pollResponse.Code, pollResponse.Body.String())
-	}
-	if !strings.Contains(pollResponse.Body.String(), `"state":"pending"`) {
-		t.Fatalf("poll body = %s, want pending", pollResponse.Body.String())
+	assertBodyDoesNotLeakSensitiveData(t, createResponse.Body.String())
+	accountID := entity.AccountIDFromEmail("new@example.com")
+	if !strings.Contains(createResponse.Body.String(), `"accountId":"`+accountID+`"`) || !strings.Contains(createResponse.Body.String(), `"email":"new@example.com"`) {
+		t.Fatalf("create body = %s, want manual account", createResponse.Body.String())
 	}
 
-	cancelResponse := authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/"+taskID, "")
-	if cancelResponse.Code != http.StatusOK {
-		t.Fatalf("cancel status = %d, body = %s", cancelResponse.Code, cancelResponse.Body.String())
+	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/"+accountID+"/usage/refresh", `{}`)
+	if refreshResponse.Code != http.StatusOK {
+		t.Fatalf("refresh one status = %d, body = %s", refreshResponse.Code, refreshResponse.Body.String())
 	}
-	if !strings.Contains(cancelResponse.Body.String(), `"canceled":true`) {
-		t.Fatalf("cancel body = %s, want canceled", cancelResponse.Body.String())
+	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"`+accountID+`"`) || !strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) {
+		t.Fatalf("refresh one body = %s, want refreshed manual account", refreshResponse.Body.String())
+	}
+}
+
+func TestAccountAPIRemovedRoutesReturnNotFound(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	for _, response := range []*httptest.ResponseRecorder{
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/import-current", `{}`),
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/login-tasks/create", `{}`),
+		authenticatedRequest(t, handler, http.MethodGet, "/api/login-tasks/fake-login-1", ""),
+		authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/fake-login-1", ""),
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`),
+	} {
+		body := response.Body.String()
+		if response.Code != http.StatusOK || !(strings.Contains(body, `"code":"NOT_FOUND"`) || strings.Contains(body, `"code":"METHOD_NOT_ALLOWED"`)) {
+			t.Fatalf("removed route response status = %d, body = %s; want unavailable route envelope", response.Code, body)
+		}
 	}
 }
 
@@ -127,7 +130,7 @@ func TestAccountAPIMutationRejectsMissingOrigin(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
 
-	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/import-current", strings.NewReader(`{}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/providers/codex/accounts/create", strings.NewReader(`{}`))
 	request.Host = "127.0.0.1:43127"
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -158,12 +161,20 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 		ID:          "codex",
 		DisplayName: "Codex Fake",
 		Accounts: []fake.AccountState{
-			{Account: testAPIAccount("acct-1"), IsCurrent: true, Usage: testAPIUsage("acct-1", entity.UsageStatusReady)},
+			{Account: testAPIAccount("acct-1"), Usage: testAPIUsage("acct-1", entity.UsageStatusReady)},
 			{Account: testAPIAccount("acct-2"), Usage: testAPIUsage("acct-2", entity.UsageStatusReady)},
 		},
 	})
 	if err := providerRegistry.Register(context.Background(), fakeProvider); err != nil {
 		t.Fatalf("Register() error = %v", err)
+	}
+	activeAccount := testAPIAccount("acct-1")
+	activeAccount.IsActive = true
+	if err := daos.Accounts.Create(context.Background(), activeAccount); err != nil {
+		t.Fatalf("seed acct-1 error = %v", err)
+	}
+	if err := daos.UsageSnapshots.Upsert(context.Background(), testAPIUsage("acct-1", entity.UsageStatusReady)); err != nil {
+		t.Fatalf("seed acct-1 usage error = %v", err)
 	}
 	if err := daos.Accounts.Create(context.Background(), testAPIAccount("acct-2")); err != nil {
 		t.Fatalf("seed acct-2 error = %v", err)
@@ -229,19 +240,6 @@ func authenticatedRequest(t *testing.T, handler http.Handler, method string, pat
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
-}
-
-func readStringField(t *testing.T, body []byte, field string) string {
-	t.Helper()
-
-	var envelope struct {
-		Data map[string]any `json:"data"`
-	}
-	if err := json.NewDecoder(bytes.NewReader(body)).Decode(&envelope); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	value, _ := envelope.Data[field].(string)
-	return value
 }
 
 func assertBodyDoesNotLeakSensitiveData(t *testing.T, body string) {

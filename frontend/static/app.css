@@ -151,23 +151,6 @@ h1 {
   letter-spacing: 0;
 }
 
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  border-radius: 999px;
-  padding: 0 9px;
-  background: #e8f3ed;
-  color: #216647;
-  font-size: 12px;
-  font-weight: 750;
-}
-
-.status-badge.unavailable {
-  background: #fff0e8;
-  color: #9a4a21;
-}
-
 .account-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));

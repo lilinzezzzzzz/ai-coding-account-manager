@@ -61,44 +61,6 @@ func (store *Store) AccountCodexDir(providerID string, storageID string) (string
 	return filepath.Join(store.rootDir, "providers", providerID, "accounts", storageID), nil
 }
 
-// NewPendingCodexDir 创建 provider 登录任务使用的临时 CODEX_HOME。
-func (store *Store) NewPendingCodexDir(providerID string) (string, error) {
-	if err := validateSegment(providerID); err != nil {
-		return "", err
-	}
-	pendingRoot := filepath.Join(store.rootDir, "providers", providerID, "pending")
-	if err := os.MkdirAll(pendingRoot, 0o700); err != nil {
-		return "", fmt.Errorf("create pending credentials root: %w", err)
-	}
-	pendingDir, err := os.MkdirTemp(pendingRoot, ".pending-*")
-	if err != nil {
-		return "", fmt.Errorf("create pending codex dir: %w", err)
-	}
-	if err := os.Chmod(pendingDir, 0o700); err != nil {
-		_ = os.RemoveAll(pendingDir)
-		return "", fmt.Errorf("chmod pending codex dir: %w", err)
-	}
-	return pendingDir, nil
-}
-
-// RemoveCodexDir 删除 store 管理的临时 CODEX_HOME。
-func (store *Store) RemoveCodexDir(ctx context.Context, codexDir string) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	absDir, err := filepath.Abs(codexDir)
-	if err != nil {
-		return fmt.Errorf("resolve codex dir: %w", err)
-	}
-	if rel, err := filepath.Rel(store.rootDir, absDir); err != nil || rel == "." || rel == ".." || len(rel) >= 3 && rel[:3] == "../" {
-		return fmt.Errorf("codex dir is outside credentials root")
-	}
-	if err := os.RemoveAll(absDir); err != nil {
-		return fmt.Errorf("remove codex dir: %w", err)
-	}
-	return nil
-}
-
 // ImportFromCodexDir 把来源 CODEX_HOME 的 auth.json 写入账号隔离目录。
 func (store *Store) ImportFromCodexDir(ctx context.Context, providerID string, storageID string, sourceCodexDir string) error {
 	if err := ctx.Err(); err != nil {
