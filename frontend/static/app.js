@@ -1,5 +1,4 @@
 const state = {
-  csrfToken: "",
   providers: [],
   accounts: [],
   loading: false,
@@ -8,7 +7,6 @@ const state = {
 
 const elements = {
   message: document.querySelector("#message"),
-  locked: document.querySelector("#locked"),
   providers: document.querySelector("#providers"),
   refreshButton: document.querySelector("#refresh-button"),
   importButton: document.querySelector("#import-button"),
@@ -21,41 +19,18 @@ boot();
 
 async function boot() {
   try {
-    const bootstrapToken = new URLSearchParams(window.location.search).get("bootstrap");
-    if (bootstrapToken) {
-      await exchangeBootstrap(bootstrapToken);
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-      await loadSession();
-    }
-    elements.locked.hidden = true;
     await loadData();
   } catch (error) {
-    elements.locked.hidden = false;
     showMessage(error.message || "初始化失败", true);
   }
-}
-
-async function exchangeBootstrap(token) {
-  const response = await api("/api/session/bootstrap", {
-    method: "POST",
-    body: { bootstrapToken: token },
-    csrf: false,
-  });
-  state.csrfToken = response.csrfToken;
-}
-
-async function loadSession() {
-  const response = await api("/api/session", { method: "GET", csrf: false });
-  state.csrfToken = response.csrfToken;
 }
 
 async function loadData() {
   setLoading(true);
   try {
     const [providers, accounts] = await Promise.all([
-      api("/api/providers", { method: "GET", csrf: false }),
-      api("/api/accounts", { method: "GET", csrf: false }),
+      api("/api/providers", { method: "GET" }),
+      api("/api/accounts", { method: "GET" }),
     ]);
     state.providers = providers;
     state.accounts = accounts;
@@ -101,7 +76,6 @@ function scheduleLoginPoll(taskId) {
     try {
       const status = await api(`/api/login-tasks/${encodeURIComponent(taskId)}`, {
         method: "GET",
-        csrf: false,
       });
       if (status.state === "completed") {
         clearLoginPoll(taskId);
@@ -203,9 +177,6 @@ async function api(path, options) {
   if (options.body !== undefined) {
     init.headers["Content-Type"] = "application/json";
     init.body = JSON.stringify(options.body);
-  }
-  if (options.csrf !== false && state.csrfToken) {
-    init.headers["X-CSRF-Token"] = state.csrfToken;
   }
 
   const response = await fetch(path, init);
@@ -384,8 +355,8 @@ function showMessage(text, isError = false) {
 
 function setLoading(loading) {
   state.loading = loading;
-  elements.refreshButton.disabled = loading || !state.csrfToken;
-  elements.importButton.disabled = loading || !state.csrfToken;
+  elements.refreshButton.disabled = loading;
+  elements.importButton.disabled = loading;
 }
 
 function primaryProviderId() {

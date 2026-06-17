@@ -116,8 +116,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 
 	securityManager, err := security.NewManager(security.Config{
-		BindAddr:       "127.0.0.1:43127",
-		BootstrapToken: "test-bootstrap-token",
+		BindAddr: "127.0.0.1:43127",
 	})
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)

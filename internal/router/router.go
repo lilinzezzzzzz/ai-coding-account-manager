@@ -46,11 +46,9 @@ func registerErrorHandlers(router chi.Router) {
 
 func registerAPIRoutes(router chi.Router, cfg Config) {
 	healthController := controller.NewHealthController()
-	sessionController := controller.NewSessionController(cfg.SecurityManager)
 
 	router.Route("/api", func(api chi.Router) {
 		registerHealthRoutes(api, healthController)
-		registerSessionRoutes(api, sessionController, cfg.SecurityManager)
 		if cfg.AccountService != nil {
 			registerProviderRoutes(api, controller.NewProviderController(cfg.ProviderService), cfg.SecurityManager)
 			registerAccountRoutes(api, controller.NewAccountController(cfg.AccountService), cfg.SecurityManager)
@@ -62,39 +60,25 @@ func registerHealthRoutes(router chi.Router, healthController controller.HealthC
 	router.Get("/health", httptransport.Handle(healthController.GetHealth))
 }
 
-func registerSessionRoutes(router chi.Router, sessionController controller.SessionController, securityManager *security.Manager) {
-	router.With(middleware.RequireSession(securityManager)).
-		Get("/session", httptransport.Handle(sessionController.GetSession))
-
-	router.With(middleware.RequireJSONContentType, middleware.LimitBodySize).
-		Post("/session/bootstrap", httptransport.Handle(sessionController.ExchangeBootstrap))
-}
-
 func registerProviderRoutes(router chi.Router, providerController controller.ProviderController, securityManager *security.Manager) {
-	router.With(middleware.RequireSession(securityManager)).
-		Get("/providers", httptransport.Handle(providerController.ListProviders))
+	router.Get("/providers", httptransport.Handle(providerController.ListProviders))
 }
 
 func registerAccountRoutes(router chi.Router, accountController controller.AccountController, securityManager *security.Manager) {
-	sessionOnly := []func(http.Handler) http.Handler{
-		middleware.RequireSession(securityManager),
-	}
 	mutation := []func(http.Handler) http.Handler{
-		middleware.RequireSession(securityManager),
 		middleware.RequireOrigin(securityManager),
-		middleware.RequireCSRF(securityManager),
 	}
 	jsonMutation := append([]func(http.Handler) http.Handler{}, mutation...)
 	jsonMutation = append(jsonMutation, middleware.RequireJSONContentType, middleware.LimitBodySize)
 
-	router.With(sessionOnly...).Get("/accounts", httptransport.Handle(accountController.ListAccounts))
+	router.Get("/accounts", httptransport.Handle(accountController.ListAccounts))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/import-current", httptransport.Handle(accountController.ImportCurrentAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/activate", httptransport.Handle(accountController.ActivateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/rename", httptransport.Handle(accountController.RenameAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/relogin", httptransport.Handle(accountController.ReloginAccount))
 	router.With(mutation...).Delete("/providers/{providerId}/accounts/{accountId}", httptransport.Handle(accountController.DeleteAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/login-tasks/create", httptransport.Handle(accountController.StartLogin))
-	router.With(sessionOnly...).Get("/login-tasks/{id}", httptransport.Handle(accountController.PollLogin))
+	router.Get("/login-tasks/{id}", httptransport.Handle(accountController.PollLogin))
 	router.With(mutation...).Delete("/login-tasks/{id}", httptransport.Handle(accountController.CancelLogin))
 	router.With(jsonMutation...).Post("/usage/refresh", httptransport.Handle(accountController.RefreshUsage))
 }

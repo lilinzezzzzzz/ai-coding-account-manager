@@ -106,7 +106,7 @@ func run() error {
 		serveErr <- err
 	}()
 
-	baseURL := "http://" + listener.Addr().String() + "/?bootstrap=" + securityManager.BootstrapToken()
+	baseURL := "http://" + listener.Addr().String() + "/"
 	logger.Info("server started", "addr", listener.Addr().String(), "url", baseURL)
 
 	// 任一分支先发生都会结束主等待：服务异常退出直接返回，收到系统信号则进入优雅关闭。

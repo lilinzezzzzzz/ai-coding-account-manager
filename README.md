@@ -14,8 +14,7 @@
 - Go HTTP server 和 Chi router 装配。
 - `/api/health` 健康检查接口。
 - 统一 API response envelope。
-- Host 校验、一次性 bootstrap、HttpOnly session Cookie、CSRF token 和 strict JSON
-  请求解析。
+- Host 校验、同源 Origin 校验、strict JSON 请求解析和 body size 限制。
 - SQLite/GORM 持久化底座、SQL migration、DAO、unit-of-work 和数据库启动校验。
 - Provider contract、registry、fake provider 和 provider service facade。
 - 账号核心 API、Codex app-server provider、隔离凭据目录和原子切换。
@@ -84,12 +83,32 @@ app-server；service 不依赖 Chi、GORM model 或 `infra`；GORM 只出现在 
 
 默认监听地址是 `127.0.0.1:43127`。
 
+推荐使用脚本启动本地完整应用。当前 Go server 同时提供后端 API 和
+`frontend/static` 前端页面，因此无需单独启动前端 dev server：
+
+```bash
+./scripts/start-local.sh
+```
+
+脚本会把临时二进制和 PID 文件写入 `.run/`。需要结束本地服务时执行：
+
+```bash
+./scripts/stop-local.sh
+```
+
+启动日志会打印本地 URL。用浏览器打开该 URL 即可使用。
+
+如果只需要验收前端交互，可用 fake provider 脚本启动：
+
+```bash
+./scripts/start-local-fake.sh
+```
+
+如果不需要 PID 文件和停止脚本，也可以直接使用底层命令：
+
 ```bash
 go run ./cmd/ai-coding-account-manager
 ```
-
-启动日志会打印带一次性 `bootstrap` 参数的本地 URL。用该 URL 打开页面后，浏览器会
-兑换 HttpOnly session Cookie，并移除地址栏中的 bootstrap 参数。
 
 可通过环境变量覆盖监听地址，但只允许 loopback 地址：
 
@@ -97,10 +116,10 @@ go run ./cmd/ai-coding-account-manager
 AI_CODING_ACCOUNT_MANAGER_BIND_ADDR=127.0.0.1:43127 go run ./cmd/ai-coding-account-manager
 ```
 
-如果只需要验收前端交互，可用 fake provider 启动：
+或通过脚本传入同样的环境变量：
 
 ```bash
-AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE=fake go run ./cmd/ai-coding-account-manager
+AI_CODING_ACCOUNT_MANAGER_BIND_ADDR=127.0.0.1:43127 ./scripts/start-local.sh
 ```
 
 ## Docker 本地启动
@@ -183,14 +202,10 @@ error != null 表示业务失败，按 error.code 分支处理
 
 - 不向局域网或公网暴露管理服务。
 - 只接受配置端口上的 `127.0.0.1` 或 `localhost` Host。
-- `/api/session/bootstrap` 使用一次性 bootstrap token 兑换 HttpOnly session Cookie。
-- 已登录页面通过 `GET /api/session` 获取与 session 绑定的 CSRF token。
-- 写请求需要同源 Origin、`X-CSRF-Token`、`Content-Type: application/json`，并限制
-  请求体不超过 16 KiB。
+- 写请求需要同源 Origin、`Content-Type: application/json`，并限制请求体不超过
+  16 KiB。
 - JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
-- 不把 token、完整 `auth.json`、OAuth URL、session Cookie 写入数据库、项目文件、
-  浏览器持久化存储或 API 响应；CSRF token 只通过已认证的 `/api/session` 响应返回。
-- bootstrap token 只出现在进程启动日志的本地 URL 中，兑换成功后即失效，并从浏览器
-  地址栏移除。
+- 不把 token、完整 `auth.json` 或 OAuth URL 写入数据库、项目文件、浏览器持久化
+  存储或 API 响应。
 - Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
   边界内。

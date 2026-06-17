@@ -4,4 +4,4 @@
 
 - `static/`：浏览器直接加载的静态资源。
 
-前端独立于后端 HTTP server 部署或运行，通过配置的 API 地址访问后端，不在 `localStorage`、`sessionStorage` 或 IndexedDB 中保存账号数据、token、Cookie、CSRF token 或完整凭证。
+前端独立于后端 HTTP server 部署或运行，通过配置的 API 地址访问后端，不在 `localStorage`、`sessionStorage` 或 IndexedDB 中保存账号数据、token 或完整凭证。

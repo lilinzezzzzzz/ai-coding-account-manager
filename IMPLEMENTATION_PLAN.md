@@ -9,7 +9,7 @@
 阶段推进规则：
 
 - 每个阶段必须有可运行或可验证的交付物。
-- 不把 token、完整 `auth.json`、OAuth URL、session 或 CSRF token 写入数据库、
+- 不把 token、完整 `auth.json` 或 OAuth URL 写入数据库、
   日志、前端存储、Git 工作区或 Docker image layer。
 - Controller 只处理 HTTP 边界，业务编排在 service，GORM 表模型在 model，
   数据访问、model/entity 转换和持久化错误映射在 DAO。
@@ -24,7 +24,7 @@
 | --- | --- | --- | --- | --- |
 | 0 | 已完成 | 项目骨架 | Go module、目录、基础命令 | `go test ./...` 可运行 |
 | 1 | 已完成 | HTTP API 基础 | `http.Server`、Chi、health | 原生启动可访问 `/api/health` |
-| 2 | 已完成 | 配置与安全基础 | config、bootstrap、session、CSRF、strict JSON | 安全边界测试通过 |
+| 2 | 已完成 | 配置与安全基础 | config、Host/Origin、strict JSON | 安全边界测试通过 |
 | 3 | 已完成 | SQLite/GORM | migration、model、DAO、unit-of-work | 数据库集成测试通过 |
 | 4 | 已完成 | Provider 基础 | contract、registry、fake provider | fake provider API 可用 |
 | 5 | 已完成 | 账号核心 API | account service、import、refresh、activate、delete | API 集成测试通过 |
@@ -118,9 +118,6 @@ go run ./cmd/ai-coding-account-manager
 交付物：
 
 - typed `Config`。
-- bootstrap token 生成和一次性兑换。
-- session Cookie。
-- CSRF token。
 - Host、Origin、Content-Type 和 body size middleware。
 - strict JSON decode helper。
 - 统一 success/error envelope。
@@ -141,16 +138,14 @@ go test ./...
 
 测试重点：
 
-- bootstrap token 只能兑换一次。
-- 未登录访问受保护 API 返回 `401`。
-- 非法 Host、Origin、CSRF 返回 `403`。
+- 非法 Host 或 Origin 返回 `403`。
 - body 过大返回 `413`。
 - unknown JSON field 返回稳定 `400`。
 
 阻断条件：
 
 - handler 需要重复实现安全校验。
-- session、CSRF 或 bootstrap token 出现在日志或响应之外的位置。
+- handler 需要为每个写请求重复实现 Host、Origin 或 body size 校验。
 
 ## 6. Phase 3：SQLite、GORM 与 DAO
 
@@ -244,7 +239,6 @@ go test ./...
 
 交付物：
 
-- `/api/session`
 - `/api/providers`
 - `/api/accounts`
 - `/api/providers/{providerId}/accounts/import-current`
@@ -272,7 +266,7 @@ go test ./...
 
 测试重点：
 
-- 未认证、非法 Origin、非法 CSRF。
+- 非法 Origin。
 - import、rename、refresh、activate、delete 成功路径。
 - 活动账号不能删除。
 - 单账号 refresh 失败不影响其他账号。
@@ -370,7 +364,7 @@ go run ./cmd/ai-coding-account-manager
 
 - 不引入 React/Vue 或前端构建链。
 - 不使用 `localStorage`、`sessionStorage` 或 IndexedDB 保存账号数据。
-- 所有写请求带 CSRF token。
+- 所有写请求走同源 Origin 校验。
 - 不使用 inline script 或第三方 CDN。
 - 前端状态优先基于 fake provider 开发，再接 Codex provider。
 
@@ -428,7 +422,7 @@ docker compose up --build
 
 - 宿主机只监听 `127.0.0.1:43127`。
 - `/api/health` 可访问。
-- 容器日志不包含 token、OAuth URL、Cookie 或 CSRF token。
+- 容器日志不包含 token、OAuth URL 或完整凭证。
 - 没有真实凭证进入 image layer。
 
 阻断条件：
@@ -456,6 +450,8 @@ docker compose build
 
 补充验证：
 
+- 脚本启动和停止 smoke test：`./scripts/start-local-fake.sh`、
+  `./scripts/stop-local.sh`。
 - 二进制启动 smoke test。
 - Docker 启动 smoke test。
 - SQLite backup/restore 验证。

@@ -32,6 +32,7 @@ infras/postgres/data/*
 # Docker specific
 *.sdi
 *.log
+.run/
 
 # Screenshots
 screenshot*.png
