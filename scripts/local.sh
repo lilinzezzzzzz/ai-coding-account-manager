@@ -11,6 +11,7 @@ BIN_FILE="${RUN_DIR}/ai-coding-account-manager"
 LOG_FILE="${RUN_DIR}/server.log"
 DEFAULT_CONFIG_FILE="${REPO_ROOT}/config/app.json"
 FAKE_CONFIG_FILE="${REPO_ROOT}/config/app.fake.json"
+DEFAULT_BIND_ADDR="127.0.0.1:43127"
 
 usage() {
   cat <<'USAGE'
@@ -51,6 +52,59 @@ build_binary() {
   echo "Building ${APP_NAME}"
   echo "  output: ${BIN_FILE}"
   go build -trimpath -o "${BIN_FILE}" ./cmd/ai-coding-account-manager
+}
+
+config_bind_addr() {
+  local config_file="$1"
+  local bind_addr
+
+  if [[ -f "${config_file}" ]]; then
+    if command -v jq >/dev/null 2>&1; then
+      bind_addr="$(jq -r '.bindAddr // empty' "${config_file}" 2>/dev/null || true)"
+      if [[ -n "${bind_addr}" ]]; then
+        printf '%s\n' "${bind_addr}"
+        return 0
+      fi
+    elif command -v python3 >/dev/null 2>&1; then
+      bind_addr="$(
+        python3 -c '
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    bind_addr = json.load(f).get("bindAddr") or ""
+print(bind_addr)
+' "${config_file}" 2>/dev/null || true
+      )"
+      if [[ -n "${bind_addr}" ]]; then
+        printf '%s\n' "${bind_addr}"
+        return 0
+      fi
+    fi
+
+    bind_addr="$(sed -nE 's/^[[:space:]]*"bindAddr"[[:space:]]*:[[:space:]]*"([^"]+)".*$/\1/p' "${config_file}" | sed -n '1p')"
+    if [[ -n "${bind_addr}" ]]; then
+      printf '%s\n' "${bind_addr}"
+      return 0
+    fi
+  fi
+
+  printf '%s\n' "${DEFAULT_BIND_ADDR}"
+}
+
+service_url() {
+  local config_file="$1"
+  local bind_addr
+  local host
+  local port
+
+  bind_addr="$(config_bind_addr "${config_file}")"
+  host="${bind_addr%:*}"
+  port="${bind_addr##*:}"
+  if [[ "${host}" == "0.0.0.0" ]]; then
+    host="127.0.0.1"
+  fi
+  printf 'http://%s:%s/\n' "${host}" "${port}"
 }
 
 read_pid_file() {
@@ -156,6 +210,7 @@ start_background() {
   if pid="$(running_pid)"; then
     echo "${APP_NAME} is already running"
     echo "  pid: ${pid}"
+    echo "  url: $(service_url "${config_file}")"
     echo "  pid file: ${PID_FILE}"
     exit 1
   fi
@@ -182,6 +237,7 @@ start_background() {
 
   echo "Started"
   echo "  pid: ${pid}"
+  echo "  url: $(service_url "${config_file}")"
   echo "  logs: ./scripts/local.sh logs --follow"
   echo "  stop: ./scripts/local.sh stop"
 }

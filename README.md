@@ -103,7 +103,7 @@ docker compose up --build
 
 | 字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `bindAddr` | `127.0.0.1:43127` | HTTP 监听地址，只允许 `127.0.0.1` 或 `localhost` |
+| `bindAddr` | `127.0.0.1:43127` | HTTP 监听地址，允许 `127.0.0.1`、`localhost` 或 `0.0.0.0`；请求 Host 仍只接受本机地址 |
 | `dataDir` | `.data` | SQLite 和登录任务运行数据目录 |
 | `credentialsDir` | `.credentials` | 账号隔离凭据目录 |
 | `codexBin` | 空 | Codex CLI 可执行文件路径；空值时自动发现 |

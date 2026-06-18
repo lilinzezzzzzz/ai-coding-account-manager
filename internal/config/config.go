@@ -94,8 +94,8 @@ func validateBindAddr(bindAddr string) error {
 	if port == "" {
 		return fmt.Errorf("invalid bind address: port is required")
 	}
-	if host != "127.0.0.1" && host != "localhost" {
-		return fmt.Errorf("invalid bind address: host must be loopback")
+	if host != "127.0.0.1" && host != "localhost" && host != "0.0.0.0" {
+		return fmt.Errorf("invalid bind address: host must be loopback or 0.0.0.0")
 	}
 	return nil
 }

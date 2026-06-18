@@ -109,9 +109,24 @@ func TestLoadFileFallsBackToCodeXHomeEnvironment(t *testing.T) {
 	}
 }
 
-func TestLoadFileRejectsNonLoopbackBindAddr(t *testing.T) {
+func TestLoadFileAllowsWildcardBindAddr(t *testing.T) {
 	configFile := filepath.Join(t.TempDir(), "app.json")
 	if err := os.WriteFile(configFile, []byte(`{"bindAddr":"0.0.0.0:43127"}`), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg, err := config.LoadFile(configFile)
+	if err != nil {
+		t.Fatalf("LoadFile() error = %v", err)
+	}
+	if cfg.BindAddr != "0.0.0.0:43127" {
+		t.Fatalf("BindAddr = %q, want 0.0.0.0:43127", cfg.BindAddr)
+	}
+}
+
+func TestLoadFileRejectsNonLocalBindAddr(t *testing.T) {
+	configFile := filepath.Join(t.TempDir(), "app.json")
+	if err := os.WriteFile(configFile, []byte(`{"bindAddr":"192.168.1.10:43127"}`), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 

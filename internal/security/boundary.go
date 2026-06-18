@@ -33,7 +33,7 @@ func NewManager(cfg Config) (*Manager, error) {
 
 	allowedHosts := map[string]struct{}{}
 	addHost := func(name string) {
-		if name != "" {
+		if name != "" && name != "0.0.0.0" {
 			allowedHosts[net.JoinHostPort(name, port)] = struct{}{}
 		}
 	}
