@@ -127,6 +127,34 @@ async function refreshAccount(account) {
   });
 }
 
+async function updatePlanExpiration(account) {
+  if (state.loading) {
+    return;
+  }
+  const currentValue = account.planExpiresAt ? formatDateInput(account.planExpiresAt) : "";
+  const input = window.prompt("套餐到期日（YYYY-MM-DD，留空清除）", currentValue);
+  if (input === null) {
+    return;
+  }
+  const value = input.trim();
+  let planExpiresAt = null;
+  if (value) {
+    if (!isValidDateInput(value)) {
+      showMessage("套餐到期日格式无效", true);
+      return;
+    }
+    planExpiresAt = new Date(`${value}T00:00:00`).getTime();
+  }
+  await runAction(async () => {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/plan-expiration/update`, {
+      method: "POST",
+      body: { planExpiresAt },
+    });
+    await loadData();
+    showMessage(planExpiresAt === null ? "套餐到期日已清除" : "套餐到期日已更新");
+  });
+}
+
 async function activateAccount(account) {
   if (!window.confirm(`切换到 ${account.label}？切换后需要 reload VS Code 窗口。`)) {
     return;
@@ -272,13 +300,13 @@ function providerActions(providerInfo) {
   actions.className = "toolbar";
   const addButton = document.createElement("button");
   addButton.type = "button";
-  addButton.textContent = "登录添加 Codex 账号";
+  addButton.textContent = "登录添加";
   addButton.disabled = state.loading || providerInfo.status !== "available";
   addButton.addEventListener("click", () => createLoginTask(providerInfo.id));
   actions.append(addButton);
   const manualButton = document.createElement("button");
   manualButton.type = "button";
-  manualButton.textContent = "手动录入邮箱";
+  manualButton.textContent = "手动录入";
   manualButton.disabled = state.loading || providerInfo.status !== "available";
   manualButton.addEventListener("click", () => createAccount(providerInfo.id));
   actions.append(manualButton);
@@ -308,9 +336,7 @@ function accountCard(account, providerInfo) {
   if (account.planType) {
     meta.append(pill(account.planType));
   }
-  if (account.planExpiresAt) {
-    meta.append(pill(`到期 ${formatPlanDate(account.planExpiresAt)}`));
-  }
+  meta.append(planExpirationPill(account));
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   card.append(main);
@@ -521,6 +547,22 @@ function pill(text, title) {
   return item;
 }
 
+function planExpirationPill(account) {
+  const text = account.planExpiresAt ? formatPlanDate(account.planExpiresAt) : "YYYY-MM-DD";
+  const item = pill(text, "点击录入套餐到期日，留空可清除");
+  item.classList.add("interactive", "plan-expiration");
+  item.tabIndex = 0;
+  item.setAttribute("role", "button");
+  item.addEventListener("click", () => updatePlanExpiration(account));
+  item.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      updatePlanExpiration(account);
+    }
+  });
+  return item;
+}
+
 function showMessage(text, isError = false) {
   elements.message.hidden = false;
   elements.message.textContent = text;
@@ -571,6 +613,14 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function isValidDateInput(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+  const date = new Date(`${value}T00:00:00`);
+  return !Number.isNaN(date.getTime()) && formatDateInput(date.getTime()) === value;
+}
+
 function shortId(value) {
   if (!value || value.length <= 18) {
     return value || "id 未知";
@@ -601,6 +651,15 @@ function formatPlanDate(value) {
     month: "numeric",
     day: "numeric",
   }).format(new Date(millis));
+}
+
+function formatDateInput(value) {
+  const millis = value < 100000000000 ? value * 1000 : value;
+  const date = new Date(millis);
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function delay(ms) {

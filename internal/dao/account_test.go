@@ -87,20 +87,22 @@ func TestSetActiveSwitchesAccountWithinProvider(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataPersistsPlanExpiration(t *testing.T) {
+func TestUpdateProviderMetadataPreservesPlanExpiration(t *testing.T) {
 	db := openDAOTestDatabase(t)
 	defer closeDAOTestDatabase(t, db)
 
 	accounts := NewAccountDAO(db.GORM())
-	if err := accounts.Create(context.Background(), testAccount("codex", "acct-1", false)); err != nil {
+	account := testAccount("codex", "acct-1", false)
+	existingPlanExpiresAt := int64(1767225600000)
+	account.PlanExpiresAt = &existingPlanExpiresAt
+	if err := accounts.Create(context.Background(), account); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
 	email := "user@example.com"
 	planType := "plus"
-	planExpiresAt := int64(1767225600000)
-	if err := accounts.UpdateMetadata(context.Background(), "codex", "acct-1", &email, &planType, &planExpiresAt, 2000); err != nil {
-		t.Fatalf("UpdateMetadata() error = %v", err)
+	if err := accounts.UpdateProviderMetadata(context.Background(), "codex", "acct-1", &email, &planType, 2000); err != nil {
+		t.Fatalf("UpdateProviderMetadata() error = %v", err)
 	}
 
 	got, err := accounts.Get(context.Background(), "codex", "acct-1")
@@ -113,11 +115,47 @@ func TestUpdateMetadataPersistsPlanExpiration(t *testing.T) {
 	if got.PlanType == nil || *got.PlanType != planType {
 		t.Fatalf("plan type = %v, want %s", got.PlanType, planType)
 	}
-	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != planExpiresAt {
-		t.Fatalf("plan expires at = %v, want %d", got.PlanExpiresAt, planExpiresAt)
+	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != existingPlanExpiresAt {
+		t.Fatalf("plan expires at = %v, want %d", got.PlanExpiresAt, existingPlanExpiresAt)
 	}
 	if got.UpdatedAt != 2000 {
 		t.Fatalf("updated at = %d, want 2000", got.UpdatedAt)
+	}
+}
+
+func TestUpdatePlanExpiresAtPersistsAndClearsManualExpiration(t *testing.T) {
+	db := openDAOTestDatabase(t)
+	defer closeDAOTestDatabase(t, db)
+
+	accounts := NewAccountDAO(db.GORM())
+	if err := accounts.Create(context.Background(), testAccount("codex", "acct-1", false)); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	planExpiresAt := int64(1767225600000)
+	if err := accounts.UpdatePlanExpiresAt(context.Background(), "codex", "acct-1", &planExpiresAt, 2000); err != nil {
+		t.Fatalf("UpdatePlanExpiresAt(set) error = %v", err)
+	}
+	got, err := accounts.Get(context.Background(), "codex", "acct-1")
+	if err != nil {
+		t.Fatalf("Get() after set error = %v", err)
+	}
+	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != planExpiresAt {
+		t.Fatalf("plan expires at after set = %v, want %d", got.PlanExpiresAt, planExpiresAt)
+	}
+
+	if err := accounts.UpdatePlanExpiresAt(context.Background(), "codex", "acct-1", nil, 3000); err != nil {
+		t.Fatalf("UpdatePlanExpiresAt(clear) error = %v", err)
+	}
+	got, err = accounts.Get(context.Background(), "codex", "acct-1")
+	if err != nil {
+		t.Fatalf("Get() after clear error = %v", err)
+	}
+	if got.PlanExpiresAt != nil {
+		t.Fatalf("plan expires at after clear = %v, want nil", got.PlanExpiresAt)
+	}
+	if got.UpdatedAt != 3000 {
+		t.Fatalf("updated at after clear = %d, want 3000", got.UpdatedAt)
 	}
 }
 

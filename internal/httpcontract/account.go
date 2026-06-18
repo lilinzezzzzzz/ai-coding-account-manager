@@ -50,6 +50,32 @@ func (request RenameAccountRequest) NormalizedLabel() (string, error) {
 	return label, nil
 }
 
+// UpdatePlanExpirationRequest 是更新人工维护套餐到期时间的 HTTP request。
+type UpdatePlanExpirationRequest struct {
+	PlanExpiresAt json.RawMessage `json:"planExpiresAt"`
+}
+
+// NormalizedPlanExpiresAt 返回已校验和标准化的套餐到期时间。
+func (request UpdatePlanExpirationRequest) NormalizedPlanExpiresAt() (*int64, error) {
+	if request.PlanExpiresAt == nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 字段不能为空")
+	}
+	if string(request.PlanExpiresAt) == "null" {
+		return nil, nil
+	}
+	var value int64
+	if err := json.Unmarshal(request.PlanExpiresAt, &value); err != nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 必须为空或正整数时间戳")
+	}
+	if value <= 0 {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 必须为空或正整数时间戳")
+	}
+	if value < 100000000000 {
+		value *= 1000
+	}
+	return &value, nil
+}
+
 // CreateAccountRequest 是根据 OpenAI 邮箱新增账号的 HTTP request。
 type CreateAccountRequest struct {
 	Email string `json:"email"`

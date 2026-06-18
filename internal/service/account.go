@@ -176,6 +176,15 @@ func (service *AccountService) RenameAccount(ctx context.Context, providerID str
 	return service.daos.Accounts.Get(ctx, providerID, accountID)
 }
 
+// UpdatePlanExpiration 更新人工维护的套餐到期时间。
+func (service *AccountService) UpdatePlanExpiration(ctx context.Context, providerID string, accountID string, planExpiresAt *int64) (entity.Account, error) {
+	now := service.now().UTC().UnixMilli()
+	if err := service.daos.Accounts.UpdatePlanExpiresAt(ctx, providerID, accountID, planExpiresAt, now); err != nil {
+		return entity.Account{}, err
+	}
+	return service.daos.Accounts.Get(ctx, providerID, accountID)
+}
+
 // ActivateAccount 激活账号，并要求同一时间只有一个 activate 操作。
 func (service *AccountService) ActivateAccount(ctx context.Context, providerID string, accountID string) (entity.Account, error) {
 	if !service.activateMu.TryLock() {
@@ -294,7 +303,7 @@ func (service *AccountService) persistRefreshSuccess(ctx context.Context, accoun
 		return service.daos.UsageSnapshots.Upsert(ctx, snapshot)
 	}
 	return service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
-		if err := daos.Accounts.UpdateMetadata(ctx, account.ProviderID, account.AccountID, refreshedAccount.Email, refreshedAccount.PlanType, refreshedAccount.PlanExpiresAt, now); err != nil {
+		if err := daos.Accounts.UpdateProviderMetadata(ctx, account.ProviderID, account.AccountID, refreshedAccount.Email, refreshedAccount.PlanType, now); err != nil {
 			return err
 		}
 		return daos.UsageSnapshots.Upsert(ctx, snapshot)
@@ -332,7 +341,6 @@ func mergeRefreshedAccount(account entity.Account, refreshed *entity.Account, no
 	}
 	account.Email = refreshed.Email
 	account.PlanType = refreshed.PlanType
-	account.PlanExpiresAt = refreshed.PlanExpiresAt
 	account.UpdatedAt = now
 	return account
 }

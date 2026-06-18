@@ -40,8 +40,7 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 						UsedPercent: floatPtr(42.5),
 						ResetsAt:    int64Ptr(1700000000000),
 					},
-					PlanType:      stringPtr("plus"),
-					PlanExpiresAt: int64Ptr(1767225600),
+					PlanType: stringPtr("plus"),
 				},
 			},
 		}}, nil
@@ -54,8 +53,8 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	if refreshedAccount.PlanType == nil || *refreshedAccount.PlanType != "plus" {
 		t.Fatalf("plan type = %v, want plus", refreshedAccount.PlanType)
 	}
-	if refreshedAccount.PlanExpiresAt == nil || *refreshedAccount.PlanExpiresAt != 1767225600000 {
-		t.Fatalf("plan expires at = %v, want 1767225600000", refreshedAccount.PlanExpiresAt)
+	if refreshedAccount.PlanExpiresAt != nil {
+		t.Fatalf("plan expires at = %v, want nil", refreshedAccount.PlanExpiresAt)
 	}
 	if snapshot.UsedPercent == nil || *snapshot.UsedPercent != 42.5 {
 		t.Fatalf("used percent = %v", snapshot.UsedPercent)

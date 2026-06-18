@@ -169,9 +169,6 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 			refreshedAccount.PlanType = &planType
 		}
 	}
-	if planExpiresAt := normalizeUnixMillis(response.RateLimits.PlanExpiresAt); planExpiresAt != nil {
-		refreshedAccount.PlanExpiresAt = planExpiresAt
-	}
 	if err := client.Close(context.Background()); err != nil {
 		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
 	}
@@ -243,21 +240,7 @@ func mapAccount(response accountReadResponse) (*entity.Account, error) {
 	if planType != "" {
 		account.PlanType = &planType
 	}
-	if planExpiresAt := normalizeUnixMillis(response.Account.PlanExpiresAt); planExpiresAt != nil {
-		account.PlanExpiresAt = planExpiresAt
-	}
 	return &account, nil
-}
-
-func normalizeUnixMillis(value *int64) *int64 {
-	if value == nil || *value <= 0 {
-		return nil
-	}
-	normalized := *value
-	if normalized < 100000000000 {
-		normalized *= 1000
-	}
-	return &normalized
 }
 
 func mapUsageSnapshot(account entity.Account, response rateLimitsReadResponse, refreshedAt int64) (*entity.UsageSnapshot, error) {
@@ -305,10 +288,9 @@ type accountReadResponse struct {
 }
 
 type codexAccount struct {
-	Type          string `json:"type"`
-	Email         string `json:"email"`
-	PlanType      string `json:"planType"`
-	PlanExpiresAt *int64 `json:"planExpiresAt"`
+	Type     string `json:"type"`
+	Email    string `json:"email"`
+	PlanType string `json:"planType"`
 }
 
 type rateLimitsReadResponse struct {
@@ -319,7 +301,6 @@ type rateLimitSnapshot struct {
 	Primary              *rateLimitWindow `json:"primary"`
 	Secondary            *rateLimitWindow `json:"secondary"`
 	PlanType             *string          `json:"planType"`
-	PlanExpiresAt        *int64           `json:"planExpiresAt"`
 	RateLimitReachedType *string          `json:"rateLimitReachedType"`
 }
 

@@ -116,6 +116,28 @@ func (controller AccountController) RenameAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
+// UpdatePlanExpiration 更新人工维护的套餐到期时间。
+func (controller AccountController) UpdatePlanExpiration(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
+	if err != nil {
+		return err
+	}
+	var request httpcontract.UpdatePlanExpirationRequest
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	planExpiresAt, err := request.NormalizedPlanExpiresAt()
+	if err != nil {
+		return err
+	}
+	account, err := controller.accounts.UpdatePlanExpiration(r.Context(), providerID, accountID, planExpiresAt)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
+	return nil
+}
+
 // ReloginAccount 是 post-MVP 能力，当前返回稳定 unsupported。
 func (controller AccountController) ReloginAccount(_ http.ResponseWriter, _ *http.Request) error {
 	return entity.NewAppError(entity.ErrorCodeUnsupported)

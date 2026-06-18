@@ -87,14 +87,39 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	if !strings.Contains(refreshResponse.Body.String(), `"account":{"providerId":"codex","accountId":"acct-2"`) ||
 		!strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) ||
 		!strings.Contains(refreshResponse.Body.String(), `"planType":"plus"`) ||
-		!strings.Contains(refreshResponse.Body.String(), `"planExpiresAt":1767225600000`) {
+		!strings.Contains(refreshResponse.Body.String(), `"planExpiresAt":null`) {
 		t.Fatalf("refresh body = %s, want acct-2 refreshed account state", refreshResponse.Body.String())
 	}
+
+	updatePlanExpirationResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan-expiration/update", `{"planExpiresAt":1767225600}`)
+	if updatePlanExpirationResponse.Code != http.StatusOK {
+		t.Fatalf("update plan expiration status = %d, body = %s", updatePlanExpirationResponse.Code, updatePlanExpirationResponse.Body.String())
+	}
+	if !strings.Contains(updatePlanExpirationResponse.Body.String(), `"planExpiresAt":1767225600000`) {
+		t.Fatalf("update plan expiration body = %s, want normalized plan expiration", updatePlanExpirationResponse.Body.String())
+	}
+
+	refreshAgainResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/refresh", `{}`)
+	if refreshAgainResponse.Code != http.StatusOK {
+		t.Fatalf("refresh again status = %d, body = %s", refreshAgainResponse.Code, refreshAgainResponse.Body.String())
+	}
+	if !strings.Contains(refreshAgainResponse.Body.String(), `"planExpiresAt":1767225600000`) {
+		t.Fatalf("refresh again body = %s, want manual plan expiration preserved", refreshAgainResponse.Body.String())
+	}
+
 	updatedListResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
 	if !strings.Contains(updatedListResponse.Body.String(), `"accountId":"acct-2"`) ||
 		!strings.Contains(updatedListResponse.Body.String(), `"planType":"plus"`) ||
 		!strings.Contains(updatedListResponse.Body.String(), `"planExpiresAt":1767225600000`) {
 		t.Fatalf("updated list body = %s, want acct-2 plan metadata", updatedListResponse.Body.String())
+	}
+
+	clearPlanExpirationResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan-expiration/update", `{"planExpiresAt":null}`)
+	if clearPlanExpirationResponse.Code != http.StatusOK {
+		t.Fatalf("clear plan expiration status = %d, body = %s", clearPlanExpirationResponse.Code, clearPlanExpirationResponse.Body.String())
+	}
+	if !strings.Contains(clearPlanExpirationResponse.Body.String(), `"planExpiresAt":null`) {
+		t.Fatalf("clear plan expiration body = %s, want null plan expiration", clearPlanExpirationResponse.Body.String())
 	}
 }
 

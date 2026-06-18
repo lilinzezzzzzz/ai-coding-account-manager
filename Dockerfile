@@ -1,4 +1,4 @@
-FROM golang:1.26.4-alpine AS build
+FROM golang:1.26.4-alpine3.24 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -6,7 +6,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -o /out/ai-coding-account-manager ./cmd/ai-coding-account-manager
 
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN adduser -D -H -u 10001 app
 WORKDIR /app

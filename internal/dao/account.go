@@ -46,7 +46,6 @@ func (dao AccountDAO) Upsert(ctx context.Context, account entity.Account) error 
 			"label",
 			"email",
 			"plan_type",
-			"plan_expires_at",
 			"is_active",
 			"updated_at",
 			"last_used_at",
@@ -134,14 +133,31 @@ func (dao AccountDAO) UpdateLabel(ctx context.Context, providerID string, accoun
 	return nil
 }
 
-// UpdateMetadata 更新账号从 provider 读取到的元数据。
-func (dao AccountDAO) UpdateMetadata(ctx context.Context, providerID string, accountID string, email *string, planType *string, planExpiresAt *int64, now int64) error {
+// UpdateProviderMetadata 更新账号从 provider 读取到的元数据。
+func (dao AccountDAO) UpdateProviderMetadata(ctx context.Context, providerID string, accountID string, email *string, planType *string, now int64) error {
 	result := dao.db.WithContext(ctx).
 		Model(&model.Account{}).
 		Where("provider_id = ? AND account_id = ?", providerID, accountID).
 		Updates(map[string]any{
-			"email":           email,
-			"plan_type":       planType,
+			"email":      email,
+			"plan_type":  planType,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return mapDatabaseError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return entity.NewAppError(entity.ErrorCodeNotFound)
+	}
+	return nil
+}
+
+// UpdatePlanExpiresAt 更新人工维护的套餐到期时间。
+func (dao AccountDAO) UpdatePlanExpiresAt(ctx context.Context, providerID string, accountID string, planExpiresAt *int64, now int64) error {
+	result := dao.db.WithContext(ctx).
+		Model(&model.Account{}).
+		Where("provider_id = ? AND account_id = ?", providerID, accountID).
+		Updates(map[string]any{
 			"plan_expires_at": planExpiresAt,
 			"updated_at":      now,
 		})

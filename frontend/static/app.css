@@ -232,6 +232,22 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.pill.interactive {
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.pill.interactive:hover,
+.pill.interactive:focus-visible {
+  border-color: #9db0c5;
+  background: #e4ebf2;
+  outline: none;
+}
+
+.pill.plan-expiration {
+  color: #3f5f7e;
+}
+
 .usage {
   display: grid;
   gap: 12px;
