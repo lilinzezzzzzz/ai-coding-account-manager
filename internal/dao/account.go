@@ -92,7 +92,7 @@ func (dao AccountDAO) ListByProvider(ctx context.Context, providerID string, lim
 	return accounts, nil
 }
 
-// ListAll 按 provider/account 稳定列出账号。
+// ListAll 按 active 优先、创建时间倒序稳定列出账号。
 func (dao AccountDAO) ListAll(ctx context.Context, limit int) ([]entity.Account, error) {
 	if limit <= 0 {
 		limit = 500
@@ -100,6 +100,8 @@ func (dao AccountDAO) ListAll(ctx context.Context, limit int) ([]entity.Account,
 
 	var records []model.Account
 	err := dao.db.WithContext(ctx).
+		Order("is_active DESC").
+		Order("created_at DESC").
 		Order("provider_id ASC").
 		Order("account_id ASC").
 		Limit(limit).

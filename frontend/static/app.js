@@ -36,19 +36,22 @@ async function loadData() {
 }
 
 async function createAccount(providerId) {
-  const email = window.prompt("OpenAI 账号邮箱");
+  const email = await promptTextDialog({
+    title: "手动录入",
+    fieldName: "email",
+    inputType: "email",
+    autocomplete: "email",
+    placeholder: "name@example.com",
+    submitText: "新增",
+    validate: (value) => (isValidEmail(value) ? "" : "OpenAI 账号邮箱无效"),
+  });
   if (email === null) {
-    return;
-  }
-  const trimmed = email.trim();
-  if (!isValidEmail(trimmed)) {
-    showMessage("OpenAI 账号邮箱无效", true);
     return;
   }
   await runAction(async () => {
     await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/create`, {
       method: "POST",
-      body: { email: trimmed },
+      body: { email },
     });
     showMessage("账号已新增");
     await loadData();
@@ -113,17 +116,22 @@ async function updatePlanExpiration(account) {
     return;
   }
   const currentValue = account.planExpiresAt ? formatDateInput(account.planExpiresAt) : "";
-  const input = window.prompt("套餐到期日（YYYY-MM-DD，留空清除）", currentValue);
+  const input = await promptTextDialog({
+    title: "套餐到期日",
+    detail: account.label || account.email || account.accountId,
+    fieldName: "planExpiresAt",
+    inputType: "text",
+    initialValue: currentValue,
+    placeholder: "YYYY-MM-DD",
+    submitText: "保存",
+    validate: (value) => (!value || isValidDateInput(value) ? "" : "套餐到期日格式无效"),
+  });
   if (input === null) {
     return;
   }
-  const value = input.trim();
+  const value = input;
   let planExpiresAt = null;
   if (value) {
-    if (!isValidDateInput(value)) {
-      showMessage("套餐到期日格式无效", true);
-      return;
-    }
     planExpiresAt = new Date(`${value}T00:00:00`).getTime();
   }
   await runAction(async () => {
@@ -137,7 +145,12 @@ async function updatePlanExpiration(account) {
 }
 
 async function activateAccount(account) {
-  if (!window.confirm(`切换到 ${account.label}？切换后需要 reload VS Code 窗口。`)) {
+  const confirmed = await confirmDialog({
+    title: "激活账号",
+    detail: `${account.label || account.email || account.accountId}\n切换后需要 reload VS Code 窗口。`,
+    confirmText: "激活",
+  });
+  if (!confirmed) {
     return;
   }
   await runAction(async () => {
@@ -166,7 +179,13 @@ async function importAccountAuthJSON(account) {
 }
 
 async function deleteAccount(account) {
-  if (!window.confirm(`删除 ${account.label}？该操作会删除隔离凭据目录。`)) {
+  const confirmed = await confirmDialog({
+    title: "删除账号",
+    detail: `${account.label || account.email || account.accountId}\n该操作会删除隔离凭据目录。`,
+    confirmText: "删除",
+    danger: true,
+  });
+  if (!confirmed) {
     return;
   }
   await runAction(async () => {
@@ -416,7 +435,7 @@ function usageLimitBlock(item) {
   remaining.textContent = `剩余 ${formatPercent(item.remainingPercent)}`;
   const reset = document.createElement("span");
   reset.className = "usage-reset";
-  reset.textContent = `(重置时间：${item.resetsAt ? formatResetTime(item.resetsAt) : "未知"})`;
+  reset.textContent = `(重置时间：${item.resetsAt ? formatDateTime(item.resetsAt) : "未知"})`;
   detail.append(remaining, reset);
   section.append(detail);
   return section;
@@ -463,59 +482,153 @@ function actionButton(label, handler) {
 }
 
 function promptAuthJSON(account) {
+  const textarea = document.createElement("textarea");
+  textarea.name = "authJson";
+  textarea.rows = 14;
+  textarea.autocomplete = "off";
+  textarea.spellcheck = false;
+  textarea.placeholder = '{\n  "tokens": {}\n}';
   return new Promise((resolve) => {
-    const dialog = document.createElement("dialog");
-    dialog.className = "auth-dialog";
-    const form = document.createElement("form");
-    form.method = "dialog";
-
-    const title = document.createElement("h2");
-    title.textContent = "导入 auth.json";
-    const accountName = document.createElement("p");
-    accountName.className = "dialog-account";
-    accountName.textContent = account.label || account.email || account.accountId;
-    const textarea = document.createElement("textarea");
-    textarea.name = "authJson";
-    textarea.rows = 14;
-    textarea.autocomplete = "off";
-    textarea.spellcheck = false;
-    textarea.placeholder = '{\n  "tokens": {}\n}';
-
-    const actions = document.createElement("div");
-    actions.className = "dialog-actions";
-    const cancelButton = document.createElement("button");
-    cancelButton.type = "button";
-    cancelButton.textContent = "取消";
-    const submitButton = document.createElement("button");
-    submitButton.type = "submit";
-    submitButton.textContent = "导入";
-    actions.append(cancelButton, submitButton);
-    form.append(title, accountName, textarea, actions);
-    dialog.append(form);
-    document.body.append(dialog);
-
-    const close = (value) => {
-      dialog.close();
-      dialog.remove();
-      resolve(value);
-    };
-    cancelButton.addEventListener("click", () => close(null));
-    dialog.addEventListener("cancel", (event) => {
-      event.preventDefault();
-      close(null);
+    openFormDialog({
+      title: "导入 auth.json",
+      detail: account.label || account.email || account.accountId,
+      body: textarea,
+      submitText: "导入",
+      initialFocus: textarea,
+      validate: () => (textarea.value.trim() ? "" : "auth.json 内容不能为空"),
+      onSubmit: () => resolve(textarea.value.trim()),
+      onCancel: () => resolve(null),
     });
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const value = textarea.value.trim();
-      if (!value) {
-        textarea.focus();
-        return;
-      }
-      close(value);
-    });
-    dialog.showModal();
-    textarea.focus();
   });
+}
+
+function promptTextDialog(options) {
+  const input = document.createElement("input");
+  input.name = options.fieldName;
+  input.type = options.inputType || "text";
+  input.autocomplete = options.autocomplete || "off";
+  input.placeholder = options.placeholder || "";
+  input.value = options.initialValue || "";
+  return new Promise((resolve) => {
+    openFormDialog({
+      title: options.title,
+      detail: options.detail || "",
+      body: input,
+      submitText: options.submitText || "确定",
+      initialFocus: input,
+      validate: () => {
+        const value = input.value.trim();
+        if (options.validate) {
+          return options.validate(value);
+        }
+        return "";
+      },
+      onSubmit: () => resolve(input.value.trim()),
+      onCancel: () => resolve(null),
+    });
+  });
+}
+
+function confirmDialog(options) {
+  const detail = document.createElement("p");
+  detail.className = "dialog-detail";
+  detail.textContent = options.detail || "";
+  return new Promise((resolve) => {
+    openFormDialog({
+      title: options.title,
+      body: detail,
+      submitText: options.confirmText || "确定",
+      submitDanger: options.danger || false,
+      onSubmit: () => resolve(true),
+      onCancel: () => resolve(false),
+    });
+  });
+}
+
+function openFormDialog(options) {
+  const dialog = document.createElement("dialog");
+  dialog.className = "app-dialog";
+  const form = document.createElement("form");
+  form.method = "dialog";
+
+  const title = document.createElement("h2");
+  title.textContent = options.title;
+  form.append(title);
+
+  if (options.detail) {
+    const detail = document.createElement("p");
+    detail.className = "dialog-account";
+    detail.textContent = options.detail;
+    form.append(detail);
+  }
+
+  form.append(options.body);
+
+  const error = document.createElement("p");
+  error.className = "dialog-error";
+  error.hidden = true;
+  form.append(error);
+
+  const actions = document.createElement("div");
+  actions.className = "dialog-actions";
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "取消";
+  const submitButton = document.createElement("button");
+  submitButton.type = "submit";
+  submitButton.textContent = options.submitText || "确定";
+  if (options.submitDanger) {
+    submitButton.classList.add("danger");
+  }
+  actions.append(cancelButton, submitButton);
+  form.append(actions);
+
+  dialog.append(form);
+  document.body.append(dialog);
+
+  let settled = false;
+  const close = (cancelled) => {
+    if (settled) {
+      return;
+    }
+    settled = true;
+    dialog.close();
+    dialog.remove();
+    if (cancelled && options.onCancel) {
+      options.onCancel();
+    }
+  };
+  cancelButton.addEventListener("click", () => close(true));
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    close(true);
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const message = options.validate ? options.validate() : "";
+    if (message) {
+      error.textContent = message;
+      error.hidden = false;
+      if (options.initialFocus) {
+        options.initialFocus.focus();
+      }
+      return;
+    }
+    if (settled) {
+      return;
+    }
+    settled = true;
+    dialog.close();
+    dialog.remove();
+    if (options.onSubmit) {
+      options.onSubmit();
+    }
+  });
+  dialog.showModal();
+  const initialFocus = options.initialFocus || dialog.querySelector("button[type='submit']");
+  if (initialFocus) {
+    initialFocus.focus();
+  }
 }
 
 function pill(text, title) {
@@ -609,12 +722,15 @@ function shortId(value) {
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
 }
 
-function formatResetTime(value) {
-  return formatUsageTimestamp(value);
+function normalizeEpochMillis(value) {
+  return value > 0 && value < 100000000000 ? value * 1000 : value;
 }
 
-function formatUsageTimestamp(value) {
-  const millis = value < 100000000000 ? value * 1000 : value;
+function formatDateTime(value) {
+  if (!value) {
+    return "未知";
+  }
+  const millis = normalizeEpochMillis(value);
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "numeric",
@@ -622,11 +738,12 @@ function formatUsageTimestamp(value) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
+    timeZoneName: "short",
   }).format(new Date(millis));
 }
 
 function formatPlanDate(value) {
-  const millis = value < 100000000000 ? value * 1000 : value;
+  const millis = normalizeEpochMillis(value);
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "numeric",
@@ -635,7 +752,7 @@ function formatPlanDate(value) {
 }
 
 function formatDateInput(value) {
-  const millis = value < 100000000000 ? value * 1000 : value;
+  const millis = normalizeEpochMillis(value);
   const date = new Date(millis);
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");

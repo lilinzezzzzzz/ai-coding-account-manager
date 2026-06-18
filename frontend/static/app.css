@@ -181,8 +181,8 @@ h1 {
 }
 
 .account-card.active {
-  border-color: #70a8d8;
-  box-shadow: inset 0 0 0 1px #70a8d8;
+  border-color: #2f8f61;
+  box-shadow: inset 0 0 0 1px #2f8f61;
 }
 
 .account-main {
@@ -199,8 +199,14 @@ h1 {
 .account-name h3 {
   margin: 0;
   font-size: 16px;
+  font-weight: 700;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+
+.account-card.active .account-name h3 {
+  color: #1f6544;
+  font-weight: 850;
 }
 
 .active-dot {
@@ -310,7 +316,7 @@ h1 {
   color: #a6342b;
 }
 
-.auth-dialog {
+.app-dialog {
   width: min(720px, calc(100vw - 28px));
   border: 1px solid #cfd8e3;
   border-radius: 8px;
@@ -319,16 +325,16 @@ h1 {
   padding: 18px;
 }
 
-.auth-dialog::backdrop {
+.app-dialog::backdrop {
   background: rgba(24, 33, 47, 0.45);
 }
 
-.auth-dialog form {
+.app-dialog form {
   display: grid;
   gap: 12px;
 }
 
-.auth-dialog h2 {
+.app-dialog h2 {
   margin: 0;
   font-size: 18px;
   line-height: 1.25;
@@ -338,24 +344,50 @@ h1 {
   margin: 0;
   color: #617083;
   font-size: 13px;
+  white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
-.auth-dialog textarea {
+.dialog-detail {
+  margin: 0;
+  color: #3f4b5b;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.dialog-error {
+  margin: -2px 0 0;
+  color: #9a352a;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.app-dialog input,
+.app-dialog textarea {
   width: 100%;
-  min-height: 260px;
-  resize: vertical;
   border: 1px solid #c8d1dc;
   border-radius: 6px;
   color: #18212f;
+  padding: 10px;
+}
+
+.app-dialog input {
+  min-height: 40px;
+}
+
+.app-dialog textarea {
+  min-height: 260px;
+  resize: vertical;
   font-family:
     "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 13px;
   line-height: 1.5;
-  padding: 10px;
 }
 
-.auth-dialog textarea:focus {
+.app-dialog input:focus,
+.app-dialog textarea:focus {
   border-color: #70a8d8;
   outline: 2px solid rgba(112, 168, 216, 0.25);
 }

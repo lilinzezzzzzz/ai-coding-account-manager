@@ -87,6 +87,43 @@ func TestSetActiveSwitchesAccountWithinProvider(t *testing.T) {
 	}
 }
 
+func TestListAllOrdersActiveFirstThenCreatedAtDescending(t *testing.T) {
+	db := openDAOTestDatabase(t)
+	defer closeDAOTestDatabase(t, db)
+
+	accounts := NewAccountDAO(db.GORM())
+	activeOld := testAccount("codex", "acct-active-old", true)
+	activeOld.CreatedAt = 1000
+	inactiveNew := testAccount("codex", "acct-inactive-new", false)
+	inactiveNew.CreatedAt = 3000
+	inactiveOld := testAccount("codex", "acct-inactive-old", false)
+	inactiveOld.CreatedAt = 2000
+
+	for _, account := range []entity.Account{inactiveOld, inactiveNew, activeOld} {
+		if err := accounts.Create(context.Background(), account); err != nil {
+			t.Fatalf("Create(%s) error = %v", account.AccountID, err)
+		}
+	}
+
+	got, err := accounts.ListAll(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ListAll() error = %v", err)
+	}
+	gotIDs := make([]string, 0, len(got))
+	for _, account := range got {
+		gotIDs = append(gotIDs, account.AccountID)
+	}
+	wantIDs := []string{"acct-active-old", "acct-inactive-new", "acct-inactive-old"}
+	if len(gotIDs) != len(wantIDs) {
+		t.Fatalf("ListAll() ids = %v, want %v", gotIDs, wantIDs)
+	}
+	for index, want := range wantIDs {
+		if gotIDs[index] != want {
+			t.Fatalf("ListAll() ids = %v, want %v", gotIDs, wantIDs)
+		}
+	}
+}
+
 func TestUpdateProviderMetadataPreservesPlanExpiration(t *testing.T) {
 	db := openDAOTestDatabase(t)
 	defer closeDAOTestDatabase(t, db)

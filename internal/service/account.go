@@ -323,7 +323,18 @@ func normalizeUsageSnapshot(account entity.Account, snapshot entity.UsageSnapsho
 	if snapshot.Status == "" {
 		snapshot.Status = entity.UsageStatusReady
 	}
+	if snapshot.ResetsAt != nil {
+		resetsAt := normalizeEpochMillis(*snapshot.ResetsAt)
+		snapshot.ResetsAt = &resetsAt
+	}
 	return snapshot
+}
+
+func normalizeEpochMillis(value int64) int64 {
+	if value > 0 && value < 100000000000 {
+		return value * 1000
+	}
+	return value
 }
 
 func mergeRefreshedAccount(account entity.Account, refreshed *entity.Account, now int64) entity.Account {
