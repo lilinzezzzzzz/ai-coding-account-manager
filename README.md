@@ -142,12 +142,13 @@ config/app.json                                      本地配置，默认被 Gi
 
 ## API
 
-API 统一返回 HTTP `200 OK`。业务成功或失败通过响应体判断：
+API 统一返回 `{data, code, message}` 结构。业务成功或失败通过响应体判断：
 
 ```json
 {
   "data": {},
-  "error": null
+  "code": "SUCCESS",
+  "message": "成功"
 }
 ```
 
@@ -156,10 +157,8 @@ API 统一返回 HTTP `200 OK`。业务成功或失败通过响应体判断：
 ```json
 {
   "data": null,
-  "error": {
-    "code": "NOT_FOUND",
-    "message": "接口不存在"
-  }
+  "code": "NOT_FOUND",
+  "message": "接口不存在"
 }
 ```
 

@@ -9,20 +9,19 @@ import (
 )
 
 type responseEnvelope struct {
-	Data  any            `json:"data"`
-	Error *errorResponse `json:"error"`
+	Data    any    `json:"data"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
 }
 
-type errorResponse struct {
-	Code    entity.ErrorCode `json:"code"`
-	Message string           `json:"message"`
-}
+const successCode = "SUCCESS"
 
 // WriteOK 写入统一成功响应。
 func WriteOK(w http.ResponseWriter, data any) {
 	writeJSON(w, http.StatusOK, responseEnvelope{
-		Data:  data,
-		Error: nil,
+		Data:    data,
+		Code:    successCode,
+		Message: "成功",
 	})
 }
 
@@ -35,11 +34,9 @@ func WriteError(w http.ResponseWriter, err error) {
 func WriteErrorWithStatus(w http.ResponseWriter, err error, statusCode int) {
 	appErr := normalizeError(err)
 	writeJSON(w, statusCode, responseEnvelope{
-		Data: nil,
-		Error: &errorResponse{
-			Code:    appErr.ErrorCode(),
-			Message: appErr.DisplayMessage(),
-		},
+		Data:    nil,
+		Code:    string(appErr.ErrorCode()),
+		Message: appErr.DisplayMessage(),
 	})
 }
 

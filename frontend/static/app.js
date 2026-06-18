@@ -2,8 +2,11 @@ const state = {
   providers: [],
   accounts: [],
   loginTasks: new Map(),
+  refreshingAccountKeys: new Set(),
   loading: false,
 };
+
+const successCode = "SUCCESS";
 
 const elements = {
   message: document.querySelector("#message"),
@@ -101,14 +104,29 @@ async function pollLoginTask(providerId, taskId) {
 }
 
 async function refreshAccount(account) {
-  await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/refresh`, {
+  const key = accountKey(account);
+  if (state.loading || state.refreshingAccountKeys.has(key)) {
+    return;
+  }
+
+  state.refreshingAccountKeys.add(key);
+  render();
+  try {
+    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/refresh`, {
       method: "POST",
       body: {},
     });
-    await loadData();
+    if (!result.account) {
+      throw new Error(result.errorMessage || "账号状态刷新失败");
+    }
+    replaceAccount(result.account);
     showMessage("账号状态已刷新");
-  });
+  } catch (error) {
+    showMessage(error.message || "账号状态刷新失败", true);
+  } finally {
+    state.refreshingAccountKeys.delete(key);
+    render();
+  }
 }
 
 async function updatePlanExpiration(account) {
@@ -221,9 +239,8 @@ async function api(path, options) {
 
   const response = await fetch(path, init);
   const envelope = await response.json();
-  if (!response.ok || envelope.error) {
-    const message = envelope.error ? envelope.error.message : `HTTP ${response.status}`;
-    throw new Error(message);
+  if (!response.ok || envelope.code !== successCode) {
+    throw new Error(envelope.message || `HTTP ${response.status}`);
   }
   // 检查业务级别的错误码
   if (envelope.data && envelope.data.errorCode && !options.allowDataErrorCode) {
@@ -316,6 +333,10 @@ function providerActions(providerInfo) {
 function accountCard(account, providerInfo) {
   const card = document.createElement("article");
   card.className = `account-card ${account.isActive ? "active" : ""}`;
+  const isRefreshing = isAccountRefreshing(account);
+  if (isRefreshing) {
+    card.setAttribute("aria-busy", "true");
+  }
 
   const main = document.createElement("div");
   main.className = "account-main";
@@ -345,15 +366,15 @@ function accountCard(account, providerInfo) {
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  actions.append(actionButton("刷新", () => refreshAccount(account)));
-  actions.append(actionButton("导入", () => importAccountAuthJSON(account)));
+  actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isRefreshing));
+  actions.append(accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
-    actions.append(actionButton("激活", () => activateAccount(account)));
+    actions.append(accountActionButton("激活", () => activateAccount(account), isRefreshing));
   }
-  const deleteButton = actionButton("删除", () => deleteAccount(account));
+  const deleteButton = accountActionButton("删除", () => deleteAccount(account), isRefreshing);
   deleteButton.className = "danger";
   deleteButton.dataset.isActive = account.isActive;
-  deleteButton.disabled = state.loading || account.isActive;
+  deleteButton.disabled = state.loading || isRefreshing || account.isActive;
   actions.append(deleteButton);
   card.append(actions);
 
@@ -478,6 +499,13 @@ function actionButton(label, handler) {
   button.textContent = label;
   button.disabled = state.loading;
   button.addEventListener("click", handler);
+  return button;
+}
+
+function accountActionButton(label, handler, accountRefreshing) {
+  const button = actionButton(label, handler);
+  button.dataset.accountRefreshing = accountRefreshing ? "true" : "false";
+  button.disabled = state.loading || accountRefreshing;
   return button;
 }
 
@@ -698,9 +726,25 @@ function setLoading(loading) {
     if (btn.classList.contains("danger") && btn.dataset.isActive === "true") {
       btn.disabled = true;
     } else {
-      btn.disabled = loading;
+      btn.disabled = loading || btn.dataset.accountRefreshing === "true";
     }
   });
+}
+
+function replaceAccount(updatedAccount) {
+  const index = state.accounts.findIndex((account) => accountKey(account) === accountKey(updatedAccount));
+  if (index === -1) {
+    return;
+  }
+  state.accounts = state.accounts.map((account, accountIndex) => (accountIndex === index ? updatedAccount : account));
+}
+
+function isAccountRefreshing(account) {
+  return state.refreshingAccountKeys.has(accountKey(account));
+}
+
+function accountKey(account) {
+  return `${account.providerId}:${account.accountId}`;
 }
 
 function isValidEmail(value) {
