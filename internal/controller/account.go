@@ -58,6 +58,20 @@ func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
+// ImportCurrentAccount 从当前活动 Codex 登录态导入账号。
+func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, r *http.Request) error {
+	providerID, err := httpcontract.ProviderID(r)
+	if err != nil {
+		return err
+	}
+	account, err := controller.accounts.ImportCurrentAccount(r.Context(), providerID)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
+	return nil
+}
+
 // RenameAccount 更新账号展示名称。
 func (controller AccountController) RenameAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)

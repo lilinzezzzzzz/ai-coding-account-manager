@@ -3,11 +3,8 @@ package entity
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 )
-
-const storageIDHexLength = 32
 
 // Account 表示 provider-neutral 的账号元数据。
 type Account struct {
@@ -53,10 +50,9 @@ type UsageSnapshot struct {
 	RefreshedAt  int64
 }
 
-// StorageIDForAccount 根据 provider/account 稳定生成不含 PII 的存储目录 ID。
+// StorageIDForAccount 返回账号隔离凭据目录 ID。
 func StorageIDForAccount(providerID string, accountID string) string {
-	sum := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s", providerID, accountID)))
-	return hex.EncodeToString(sum[:])[:storageIDHexLength]
+	return accountID
 }
 
 // AccountIDFromEmail 根据 OpenAI 邮箱生成稳定账号 ID。

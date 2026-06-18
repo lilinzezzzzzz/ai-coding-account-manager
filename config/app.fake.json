@@ -1,0 +1,8 @@
+{
+  "bindAddr": "127.0.0.1:43128",
+  "dataDir": ".data-fake",
+  "credentialsDir": ".credentials-fake",
+  "codexBin": "",
+  "codexHome": "",
+  "providerMode": "fake"
+}

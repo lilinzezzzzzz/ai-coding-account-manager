@@ -17,9 +17,10 @@ import (
 
 // Config 保存 router 构造参数。
 type Config struct {
-	SecurityManager *security.Manager
-	ProviderService service.ProviderService
-	AccountService  *service.AccountService
+	SecurityManager  *security.Manager
+	ProviderService  service.ProviderService
+	AccountService   *service.AccountService
+	LoginTaskService *service.LoginTaskService
 }
 
 // NewHandler 创建应用 HTTP 路由。
@@ -52,6 +53,9 @@ func registerAPIRoutes(router chi.Router, cfg Config) {
 		if cfg.AccountService != nil {
 			registerProviderRoutes(api, controller.NewProviderController(cfg.ProviderService), cfg.SecurityManager)
 			registerAccountRoutes(api, controller.NewAccountController(cfg.AccountService), cfg.SecurityManager)
+			if cfg.LoginTaskService != nil {
+				registerLoginTaskRoutes(api, controller.NewLoginTaskController(cfg.LoginTaskService), cfg.SecurityManager)
+			}
 		}
 	})
 }
@@ -73,11 +77,24 @@ func registerAccountRoutes(router chi.Router, accountController controller.Accou
 
 	router.Get("/accounts", httptransport.Handle(accountController.ListAccounts))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/create", httptransport.Handle(accountController.CreateAccount))
+	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/import-current", httptransport.Handle(accountController.ImportCurrentAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/activate", httptransport.Handle(accountController.ActivateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/rename", httptransport.Handle(accountController.RenameAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/relogin", httptransport.Handle(accountController.ReloginAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/usage/refresh", httptransport.Handle(accountController.RefreshAccountUsage))
 	router.With(mutation...).Delete("/providers/{providerId}/accounts/{accountId}", httptransport.Handle(accountController.DeleteAccount))
+}
+
+func registerLoginTaskRoutes(router chi.Router, loginTaskController controller.LoginTaskController, securityManager *security.Manager) {
+	mutation := []func(http.Handler) http.Handler{
+		middleware.RequireOrigin(securityManager),
+	}
+	jsonMutation := append([]func(http.Handler) http.Handler{}, mutation...)
+	jsonMutation = append(jsonMutation, middleware.RequireJSONContentType, middleware.LimitBodySize)
+
+	router.With(jsonMutation...).Post("/providers/{providerId}/login-tasks/create", httptransport.Handle(loginTaskController.CreateLoginTask))
+	router.Get("/providers/{providerId}/login-tasks/{taskId}", httptransport.Handle(loginTaskController.GetLoginTask))
+	router.With(jsonMutation...).Post("/providers/{providerId}/login-tasks/{taskId}/cancel", httptransport.Handle(loginTaskController.CancelLoginTask))
 }
 
 func registerFrontendRoutes(router chi.Router) {

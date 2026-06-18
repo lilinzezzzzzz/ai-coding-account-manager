@@ -35,6 +35,12 @@ func TestStoreImportsActivatesAndRemovesAuth(t *testing.T) {
 	}
 	assertFileMode(t, filepath.Join(accountDir, authFileName), 0o600)
 
+	runtimeDir := filepath.Join(tempDir, "runtime")
+	if err := store.ExportToCodexDir(context.Background(), "codex", "storage-1", runtimeDir); err != nil {
+		t.Fatalf("export auth: %v", err)
+	}
+	assertFileMode(t, filepath.Join(runtimeDir, authFileName), 0o600)
+
 	if err := store.ActivateAccount(context.Background(), "codex", "storage-1"); err != nil {
 		t.Fatalf("activate account: %v", err)
 	}

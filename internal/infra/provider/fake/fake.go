@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -115,6 +116,26 @@ func (fakeProvider *Provider) Describe(context.Context) (provider.Description, e
 		description.ErrorCode = &code
 	}
 	return description, nil
+}
+
+// ImportCurrentAccount 返回 fake provider 中稳定排序后的第一个账号。
+func (fakeProvider *Provider) ImportCurrentAccount(context.Context) (*entity.Account, error) {
+	fakeProvider.mu.Lock()
+	defer fakeProvider.mu.Unlock()
+
+	if err := fakeProvider.ensureAvailableLocked(); err != nil {
+		return nil, err
+	}
+	keys := make([]string, 0, len(fakeProvider.accounts))
+	for key := range fakeProvider.accounts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	if len(keys) == 0 {
+		return nil, entity.NewAppError(entity.ErrorCodeNotFound)
+	}
+	account := fakeProvider.accounts[keys[0]]
+	return &account, nil
 }
 
 // RefreshAccount 返回账号对应的 fake usage snapshot。

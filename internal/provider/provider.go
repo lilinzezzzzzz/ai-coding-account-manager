@@ -9,6 +9,7 @@ import (
 // Provider 定义 provider-neutral 的账号 usage 和激活能力。
 type Provider interface {
 	Describe(context.Context) (Description, error)
+	ImportCurrentAccount(context.Context) (*entity.Account, error)
 	RefreshAccount(context.Context, entity.Account) (*entity.UsageSnapshot, error)
 	ActivateAccount(context.Context, entity.Account) error
 	RemoveAccountData(context.Context, entity.Account) error

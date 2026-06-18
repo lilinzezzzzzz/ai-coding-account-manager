@@ -62,10 +62,11 @@ func (request CreateAccountRequest) NormalizedEmail() (string, error) {
 
 // RefreshResultResponse 是单账号 usage 刷新结果的 HTTP response。
 type RefreshResultResponse struct {
-	ProviderID string                 `json:"providerId"`
-	AccountID  string                 `json:"accountId"`
-	Usage      *UsageSnapshotResponse `json:"usage"`
-	ErrorCode  *entity.ErrorCode      `json:"errorCode"`
+	ProviderID   string                 `json:"providerId"`
+	AccountID    string                 `json:"accountId"`
+	Usage        *UsageSnapshotResponse `json:"usage"`
+	ErrorCode    *entity.ErrorCode      `json:"errorCode"`
+	ErrorMessage *string                `json:"errorMessage"`
 }
 
 // AccountViewResponse 将 service 账号视图转换为 HTTP response。
@@ -109,9 +110,10 @@ func UsageSnapshotHTTPResponse(usage entity.UsageSnapshot) UsageSnapshotResponse
 // RefreshResultHTTPResponse 将 service 刷新结果转换为 HTTP response。
 func RefreshResultHTTPResponse(result service.RefreshResult) RefreshResultResponse {
 	response := RefreshResultResponse{
-		ProviderID: result.ProviderID,
-		AccountID:  result.AccountID,
-		ErrorCode:  result.ErrorCode,
+		ProviderID:   result.ProviderID,
+		AccountID:    result.AccountID,
+		ErrorCode:    result.ErrorCode,
+		ErrorMessage: result.ErrorMessage,
 	}
 	if result.Usage != nil {
 		usage := UsageSnapshotHTTPResponse(*result.Usage)

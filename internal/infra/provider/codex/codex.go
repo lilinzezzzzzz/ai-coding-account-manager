@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -79,27 +80,75 @@ func (providerImpl *Provider) Describe(context.Context) (provider.Description, e
 	}, nil
 }
 
-// RefreshAccount 使用账号隔离 CODEX_HOME 刷新 usage。
-func (providerImpl *Provider) RefreshAccount(ctx context.Context, account entity.Account) (*entity.UsageSnapshot, error) {
-	accountDir, err := providerImpl.credentials.AccountCodexDir(providerID, account.StorageID)
+// ImportCurrentAccount 读取活动 CODEX_HOME 登录态，并把 auth.json 导入账号隔离目录。
+func (providerImpl *Provider) ImportCurrentAccount(ctx context.Context) (*entity.Account, error) {
+	activeDir := providerImpl.credentials.ActiveCodexDir()
+	account, err := providerImpl.ReadAccountFromCodexDir(ctx, activeDir)
 	if err != nil {
-		return nil, entity.WrapAppError(entity.ErrorCodeUnavailable, err)
+		return nil, err
 	}
-	client, err := providerImpl.startClient(ctx, accountDir)
+	if err := providerImpl.ImportAccountAuthFromCodexDir(ctx, *account, activeDir); err != nil {
+		return nil, err
+	}
+	return account, nil
+}
+
+// ReadAccountFromCodexDir 使用指定 CODEX_HOME 读取 Codex 账号元数据。
+func (providerImpl *Provider) ReadAccountFromCodexDir(ctx context.Context, codexHome string) (*entity.Account, error) {
+	client, err := providerImpl.startClient(ctx, codexHome)
 	if err != nil {
 		return nil, err
 	}
 	defer func() {
 		_ = client.Close(context.Background())
 	}()
+	return providerImpl.readAccount(ctx, client, true)
+}
+
+// ImportAccountAuthFromCodexDir 把指定 CODEX_HOME 的 auth.json 导入账号隔离目录。
+func (providerImpl *Provider) ImportAccountAuthFromCodexDir(ctx context.Context, account entity.Account, codexHome string) error {
+	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, codexHome); err != nil {
+		return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "导入 Codex auth.json 失败", err)
+	}
+	return nil
+}
+
+// RefreshAccount 使用账号隔离 CODEX_HOME 刷新 usage。
+func (providerImpl *Provider) RefreshAccount(ctx context.Context, account entity.Account) (*entity.UsageSnapshot, error) {
+	if err := providerImpl.credentials.ValidateAccount(ctx, providerID, account.StorageID); err != nil {
+		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "账号未导入 Codex auth.json，请先登录添加账号", err)
+	}
+	runtimeDir, err := os.MkdirTemp("", "ai-coding-account-manager-codex-home-*")
+	if err != nil {
+		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "创建 Codex 临时运行目录失败", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(runtimeDir)
+	}()
+	if err := providerImpl.credentials.ExportToCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
+		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
+	}
+
+	client, err := providerImpl.startClient(ctx, runtimeDir)
+	if err != nil {
+		return nil, err
+	}
 
 	if _, err := providerImpl.readAccount(ctx, client, true); err != nil {
+		_ = client.Close(context.Background())
 		return nil, err
 	}
 
 	var response rateLimitsReadResponse
 	if err := client.Call(ctx, "account/rateLimits/read", map[string]any{}, &response); err != nil {
+		_ = client.Close(context.Background())
 		return nil, mapAppServerError("read Codex rate limits", err)
+	}
+	if err := client.Close(context.Background()); err != nil {
+		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
+	}
+	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
+		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
 	}
 	return mapUsageSnapshot(account, response, providerImpl.now().UTC().UnixMilli())
 }
@@ -140,7 +189,7 @@ func (providerImpl *Provider) readAccount(ctx context.Context, client appServerC
 }
 
 func mapAccount(response accountReadResponse) (*entity.Account, error) {
-	if response.Account == nil || response.RequiresOpenaiAuth {
+	if response.Account == nil {
 		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 账号未登录")
 	}
 	if response.Account.Type != "chatgpt" {

@@ -4,8 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-RUN_DIR="${AI_CODING_ACCOUNT_MANAGER_RUN_DIR:-${REPO_ROOT}/.run}"
-PID_FILE="${AI_CODING_ACCOUNT_MANAGER_PID_FILE:-${RUN_DIR}/server.pid}"
+RUN_DIR="${REPO_ROOT}/.run"
+PID_FILE="${RUN_DIR}/server.pid"
 
 if [[ ! -f "${PID_FILE}" ]]; then
   echo "AI Coding Account Manager is not running: pid file not found"

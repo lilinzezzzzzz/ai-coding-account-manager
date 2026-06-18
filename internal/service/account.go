@@ -21,10 +21,11 @@ type AccountWithUsage struct {
 
 // RefreshResult 表示单账号刷新结果。
 type RefreshResult struct {
-	ProviderID string
-	AccountID  string
-	Usage      *entity.UsageSnapshot
-	ErrorCode  *entity.ErrorCode
+	ProviderID   string
+	AccountID    string
+	Usage        *entity.UsageSnapshot
+	ErrorCode    *entity.ErrorCode
+	ErrorMessage *string
 }
 
 // CreateManualAccountInput 表示手动创建账号所需输入。
@@ -107,6 +108,35 @@ func (service *AccountService) CreateManualAccount(ctx context.Context, input Cr
 	return AccountWithUsage{Account: persisted}, nil
 }
 
+// ImportCurrentAccount 从 provider 当前活动登录态导入账号。
+func (service *AccountService) ImportCurrentAccount(ctx context.Context, providerID string) (AccountWithUsage, error) {
+	registeredProvider, err := service.getProvider(providerID)
+	if err != nil {
+		return AccountWithUsage{}, err
+	}
+	imported, err := registeredProvider.ImportCurrentAccount(ctx)
+	if err != nil {
+		return AccountWithUsage{}, err
+	}
+	account := service.normalizeAccount(providerID, *imported)
+	account.IsActive = false
+
+	if err := service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
+		if err := daos.Accounts.Upsert(ctx, account); err != nil {
+			return err
+		}
+		return daos.Accounts.SetActive(ctx, providerID, account.AccountID, service.now().UTC().UnixMilli())
+	}); err != nil {
+		return AccountWithUsage{}, err
+	}
+
+	persisted, err := service.daos.Accounts.Get(ctx, providerID, account.AccountID)
+	if err != nil {
+		return AccountWithUsage{}, err
+	}
+	return AccountWithUsage{Account: persisted}, nil
+}
+
 // RenameAccount 更新账号 label。
 func (service *AccountService) RenameAccount(ctx context.Context, providerID string, accountID string, label string) (entity.Account, error) {
 	now := service.now().UTC().UnixMilli()
@@ -180,6 +210,7 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	registeredProvider, err := service.getProvider(account.ProviderID)
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
+		result.ErrorMessage = errorMessagePtr(err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
@@ -187,12 +218,14 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	snapshot, err := registeredProvider.RefreshAccount(ctx, account)
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
+		result.ErrorMessage = errorMessagePtr(err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
 	normalizedSnapshot := normalizeUsageSnapshot(account, *snapshot)
 	if err := service.daos.UsageSnapshots.Upsert(ctx, normalizedSnapshot); err != nil {
 		result.ErrorCode = errorCodePtr(err)
+		result.ErrorMessage = errorMessagePtr(err)
 		return result
 	}
 	result.Usage = &normalizedSnapshot
@@ -249,6 +282,14 @@ func errorCodePtr(err error) *entity.ErrorCode {
 		code = appErr.ErrorCode()
 	}
 	return &code
+}
+
+func errorMessagePtr(err error) *string {
+	if appErr, ok := entity.AsAppError(err); ok {
+		message := appErr.DisplayMessage()
+		return &message
+	}
+	return nil
 }
 
 func accountKey(providerID string, accountID string) string {

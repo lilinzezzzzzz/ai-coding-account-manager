@@ -2,8 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 # fake provider 用于前端交互和 Phase 9 smoke test，不读取真实 Codex 凭据。
-export AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE=fake
-
-exec "${SCRIPT_DIR}/start-local.sh"
+exec "${SCRIPT_DIR}/start-local.sh" --config "${REPO_ROOT}/config/app.fake.json"

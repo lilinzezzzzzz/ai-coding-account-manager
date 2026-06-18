@@ -6,15 +6,16 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${REPO_ROOT}"
 
-# Go server 同时提供后端 API 和 frontend/static 静态页面。
-: "${AI_CODING_ACCOUNT_MANAGER_BIND_ADDR:=127.0.0.1:43127}"
-export AI_CODING_ACCOUNT_MANAGER_BIND_ADDR
+RUN_DIR="${REPO_ROOT}/.run"
+PID_FILE="${RUN_DIR}/server.pid"
+BIN_FILE="${RUN_DIR}/ai-coding-account-manager"
+CONFIG_FILE="${REPO_ROOT}/config/app.json"
 
-RUN_DIR="${AI_CODING_ACCOUNT_MANAGER_RUN_DIR:-${REPO_ROOT}/.run}"
-PID_FILE="${AI_CODING_ACCOUNT_MANAGER_PID_FILE:-${RUN_DIR}/server.pid}"
-BIN_FILE="${AI_CODING_ACCOUNT_MANAGER_BIN_FILE:-${RUN_DIR}/ai-coding-account-manager}"
+if [[ "${1:-}" == "--config" ]] && [[ -n "${2:-}" ]]; then
+  CONFIG_FILE="${2}"
+fi
 
-mkdir -p "${RUN_DIR}"
+mkdir -p "${RUN_DIR}" "${REPO_ROOT}/config"
 
 if [[ -f "${PID_FILE}" ]]; then
   existing_pid="$(tr -d '[:space:]' <"${PID_FILE}")"
@@ -30,14 +31,14 @@ if [[ -f "${PID_FILE}" ]]; then
 fi
 
 echo "Starting AI Coding Account Manager"
-echo "  bind: ${AI_CODING_ACCOUNT_MANAGER_BIND_ADDR}"
-echo "  provider mode: ${AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE:-codex}"
+echo "  config file: ${CONFIG_FILE}"
+echo "  run dir: ${RUN_DIR}"
 echo "  frontend: served by Go server from frontend/static"
 echo "  pid file: ${PID_FILE}"
 
 go build -trimpath -o "${BIN_FILE}" ./cmd/ai-coding-account-manager
 
-"${BIN_FILE}" &
+"${BIN_FILE}" "$@" &
 service_pid="$!"
 echo "${service_pid}" >"${PID_FILE}"
 echo "  pid: ${service_pid}"

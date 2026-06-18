@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -18,8 +19,10 @@ import (
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httpserver"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/codexruntime"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/credentials"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/database"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/loginrunner"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/provider/codex"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/provider/fake"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
@@ -28,23 +31,32 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	if err := run(os.Args[1:]); err != nil {
 		slog.Error("application stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(args []string) error {
 	// 进程入口先建立默认 logger，后续启动失败也能输出结构化错误。
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
 	slog.SetDefault(logger)
 
+	flags := flag.NewFlagSet("ai-coding-account-manager", flag.ContinueOnError)
+	configFile := flags.String("config", "", "配置文件路径")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+
 	// 配置读取集中放在 config 包，main 只负责装配启动依赖。
-	cfg, err := config.Load()
+	cfg, err := config.LoadFile(*configFile)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+	if err := os.MkdirAll(cfg.ConfigDir, 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
@@ -62,12 +74,18 @@ func run() error {
 		}
 	}()
 
+	runtimeResolver := codexruntime.NewResolver(codexruntime.Config{ConfiguredBin: cfg.CodexBin})
 	providerRegistry := provider.NewRegistry()
-	if err := registerProviders(context.Background(), providerRegistry, cfg); err != nil {
+	codexProvider, err := registerProviders(context.Background(), providerRegistry, cfg, runtimeResolver)
+	if err != nil {
 		return err
 	}
 	daos := dao.NewDAOs(appDB.GORM())
 	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry)
+	loginTaskService, err := newLoginTaskService(cfg, daos, appDB, runtimeResolver, codexProvider)
+	if err != nil {
+		return err
+	}
 	providerService := service.NewProviderService(providerRegistry)
 	securityManager, err := security.NewManager(security.Config{BindAddr: cfg.BindAddr})
 	if err != nil {
@@ -76,10 +94,11 @@ func run() error {
 
 	// httpserver.NewServer 组装 http.Server 和应用 HTTP handler。
 	httpServer, err := httpserver.NewServer(httpserver.Config{
-		Addr:            cfg.BindAddr,
-		SecurityManager: securityManager,
-		ProviderService: providerService,
-		AccountService:  accountService,
+		Addr:             cfg.BindAddr,
+		SecurityManager:  securityManager,
+		ProviderService:  providerService,
+		AccountService:   accountService,
+		LoginTaskService: loginTaskService,
 	})
 	if err != nil {
 		return fmt.Errorf("create server: %w", err)
@@ -134,32 +153,59 @@ func run() error {
 	return nil
 }
 
-func registerProviders(ctx context.Context, providerRegistry *provider.Registry, cfg config.Config) error {
+func registerProviders(ctx context.Context, providerRegistry *provider.Registry, cfg config.Config, runtimeResolver *codexruntime.Resolver) (*codex.Provider, error) {
 	if strings.EqualFold(cfg.ProviderMode, "fake") {
 		if err := providerRegistry.Register(ctx, newDefaultFakeProvider()); err != nil {
-			return fmt.Errorf("register fake provider: %w", err)
+			return nil, fmt.Errorf("register fake provider: %w", err)
 		}
-		return nil
+		return nil, nil
+	}
+
+	runtime, err := runtimeResolver.Resolve(ctx)
+	if err != nil {
+		code := entity.ErrorCodeUnavailable
+		if registerErr := providerRegistry.RegisterUnavailable(provider.Description{
+			ID:          "codex",
+			DisplayName: "OpenAI Codex",
+			ErrorCode:   &code,
+		}, err); registerErr != nil {
+			return nil, fmt.Errorf("register unavailable codex provider: %w", registerErr)
+		}
+		return nil, nil
 	}
 
 	credentialStore, err := credentials.NewStore(credentials.Config{
-		RootDir:        filepath.Join(cfg.DataDir, "credentials"),
+		RootDir:        cfg.CredentialsDir,
 		ActiveCodexDir: cfg.CodexHome,
 	})
 	if err != nil {
-		return fmt.Errorf("create credentials store: %w", err)
+		return nil, fmt.Errorf("create credentials store: %w", err)
 	}
 	codexProvider, err := codex.New(codex.Config{
-		Bin:         cfg.CodexBin,
+		Bin:         runtime.Path,
 		Credentials: credentialStore,
 	})
 	if err != nil {
-		return fmt.Errorf("create codex provider: %w", err)
+		return nil, fmt.Errorf("create codex provider: %w", err)
 	}
 	if err := providerRegistry.Register(ctx, codexProvider); err != nil {
-		return fmt.Errorf("register codex provider: %w", err)
+		return nil, fmt.Errorf("register codex provider: %w", err)
 	}
-	return nil
+	return codexProvider, nil
+}
+
+func newLoginTaskService(cfg config.Config, daos dao.DAOs, appDB *database.DB, runtimeResolver *codexruntime.Resolver, codexProvider *codex.Provider) (*service.LoginTaskService, error) {
+	if strings.EqualFold(cfg.ProviderMode, "fake") || codexProvider == nil {
+		return nil, nil
+	}
+	return service.NewLoginTaskService(service.LoginTaskConfig{
+		UnitOfWork: dao.NewUnitOfWork(appDB.GORM()),
+		DAOs:       daos,
+		Resolver:   runtimeResolver,
+		Runner:     loginrunner.Runner{},
+		Importer:   codexProvider,
+		RootDir:    filepath.Join(cfg.DataDir, "login-tasks"),
+	})
 }
 
 func newDefaultFakeProvider() provider.Provider {

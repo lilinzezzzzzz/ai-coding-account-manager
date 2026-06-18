@@ -1,0 +1,8 @@
+{
+  "bindAddr": "127.0.0.1:43127",
+  "dataDir": ".data",
+  "credentialsDir": ".credentials",
+  "codexBin": "",
+  "codexHome": "",
+  "providerMode": ""
+}

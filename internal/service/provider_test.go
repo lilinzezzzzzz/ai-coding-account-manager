@@ -56,6 +56,10 @@ func (stub *serviceStubProvider) RefreshAccount(context.Context, entity.Account)
 	return nil, provider.Unsupported()
 }
 
+func (stub *serviceStubProvider) ImportCurrentAccount(context.Context) (*entity.Account, error) {
+	return nil, provider.Unsupported()
+}
+
 func (stub *serviceStubProvider) ActivateAccount(context.Context, entity.Account) error {
 	return provider.Unsupported()
 }

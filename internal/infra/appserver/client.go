@@ -9,17 +9,19 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
 
 // Client 是 Codex app-server JSON-RPC client。
 type Client struct {
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	lines  *bufio.Scanner
-	mu     sync.Mutex
-	nextID atomic.Int64
+	cmd         *exec.Cmd
+	stdin       io.WriteCloser
+	lines       *bufio.Scanner
+	cleanupDirs []string
+	mu          sync.Mutex
+	nextID      atomic.Int64
 }
 
 // Config 保存 app-server client 启动参数。
@@ -36,6 +38,7 @@ func Start(ctx context.Context, cfg Config) (*Client, error) {
 		bin = "codex"
 	}
 	cmd := exec.CommandContext(ctx, bin, "app-server", "--stdio")
+	var cleanupDirs []string
 	if len(cfg.Env) > 0 {
 		cmd.Env = append(cmd.Environ(), cfg.Env...)
 	}
@@ -44,6 +47,19 @@ func Start(ctx context.Context, cfg Config) (*Client, error) {
 			cmd.Env = cmd.Environ()
 		}
 		cmd.Env = append(cmd.Env, "CODEX_HOME="+cfg.CodexHome)
+		if !hasEnvKey(cmd.Env, "CODEX_SQLITE_HOME") {
+			sqliteHome, err := os.MkdirTemp("", "ai-coding-account-manager-codex-sqlite-*")
+			if err != nil {
+				return nil, fmt.Errorf("create app-server sqlite home: %w", err)
+			}
+			cmd.Env = append(cmd.Env, "CODEX_SQLITE_HOME="+sqliteHome)
+			cleanupDirs = append(cleanupDirs, sqliteHome)
+			defer func() {
+				if cmd.Process == nil {
+					_ = os.RemoveAll(sqliteHome)
+				}
+			}()
+		}
 	}
 
 	stdin, err := cmd.StdinPipe()
@@ -64,9 +80,10 @@ func Start(ctx context.Context, cfg Config) (*Client, error) {
 	go discard(stderr)
 
 	client := &Client{
-		cmd:   cmd,
-		stdin: stdin,
-		lines: bufio.NewScanner(stdout),
+		cmd:         cmd,
+		stdin:       stdin,
+		lines:       bufio.NewScanner(stdout),
+		cleanupDirs: cleanupDirs,
 	}
 	client.lines.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
 
@@ -154,11 +171,26 @@ func (client *Client) Close(context.Context) error {
 	if client.cmd == nil || client.cmd.Process == nil {
 		return nil
 	}
+	defer func() {
+		for _, dir := range client.cleanupDirs {
+			_ = os.RemoveAll(dir)
+		}
+	}()
 	if err := client.cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
 		return err
 	}
 	_ = client.cmd.Wait()
 	return nil
+}
+
+func hasEnvKey(env []string, key string) bool {
+	prefix := key + "="
+	for _, value := range env {
+		if strings.HasPrefix(value, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func (client *Client) initialize(ctx context.Context) error {

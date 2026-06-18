@@ -90,6 +90,10 @@ func (stub *stubProvider) RefreshAccount(context.Context, entity.Account) (*enti
 	return nil, Unsupported()
 }
 
+func (stub *stubProvider) ImportCurrentAccount(context.Context) (*entity.Account, error) {
+	return nil, Unsupported()
+}
+
 func (stub *stubProvider) ActivateAccount(context.Context, entity.Account) error {
 	return Unsupported()
 }

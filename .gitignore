@@ -32,6 +32,8 @@ infras/postgres/data/*
 # Docker specific
 *.sdi
 *.log
+.data/
+.data-fake/
 .run/
 
 # Screenshots
@@ -143,6 +145,9 @@ venv.bak/
 
 # Secrets
 configs/.secrets
+config/app.json
+.credentials/
+.credentials-fake/
 *.pem
 *.key
 .env.local

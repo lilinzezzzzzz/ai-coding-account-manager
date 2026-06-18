@@ -12,10 +12,11 @@ import (
 
 // Config 保存 HTTP server 构造参数。
 type Config struct {
-	Addr            string
-	SecurityManager *security.Manager
-	ProviderService service.ProviderService
-	AccountService  *service.AccountService
+	Addr             string
+	SecurityManager  *security.Manager
+	ProviderService  service.ProviderService
+	AccountService   *service.AccountService
+	LoginTaskService *service.LoginTaskService
 }
 
 // NewServer 显式构造带超时限制的 http.Server。
@@ -34,7 +35,7 @@ func NewServer(cfg Config) (*http.Server, error) {
 
 	return &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           router.NewHandler(router.Config{SecurityManager: securityManager, ProviderService: cfg.ProviderService, AccountService: cfg.AccountService}),
+		Handler:           router.NewHandler(router.Config{SecurityManager: securityManager, ProviderService: cfg.ProviderService, AccountService: cfg.AccountService, LoginTaskService: cfg.LoginTaskService}),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      30 * time.Second,

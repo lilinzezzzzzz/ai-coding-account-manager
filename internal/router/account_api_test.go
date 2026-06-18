@@ -2,15 +2,19 @@ package router_test
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/codexruntime"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/database"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/loginrunner"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/provider/fake"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/router"
@@ -108,13 +112,54 @@ func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 	}
 }
 
+func TestAccountAPIImportCurrentAccount(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/import-current", `{}`)
+	if importResponse.Code != http.StatusOK {
+		t.Fatalf("import current status = %d, body = %s", importResponse.Code, importResponse.Body.String())
+	}
+	body := importResponse.Body.String()
+	assertBodyDoesNotLeakSensitiveData(t, body)
+	if !strings.Contains(body, `"accountId":"acct-1"`) || !strings.Contains(body, `"isActive":true`) {
+		t.Fatalf("import current body = %s, want acct-1 active", body)
+	}
+}
+
+func TestAccountAPILoginTaskCreateAndImport(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	createResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/login-tasks/create", `{"expectedEmail":"login@example.com","mode":"browser"}`)
+	if createResponse.Code != http.StatusOK {
+		t.Fatalf("create login task status = %d, body = %s", createResponse.Code, createResponse.Body.String())
+	}
+	body := createResponse.Body.String()
+	assertBodyDoesNotLeakSensitiveData(t, body)
+	taskID := extractStringField(t, body, "taskId")
+
+	getResponse := waitForLoginTaskImported(t, handler, taskID)
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("get login task status = %d, body = %s", getResponse.Code, getResponse.Body.String())
+	}
+	getBody := getResponse.Body.String()
+	assertBodyDoesNotLeakSensitiveData(t, getBody)
+	if !strings.Contains(getBody, `"status":"imported"`) || !strings.Contains(getBody, `"email":"login@example.com"`) {
+		t.Fatalf("get login task body = %s, want imported login@example.com", getBody)
+	}
+
+	listResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if !strings.Contains(listResponse.Body.String(), `"email":"login@example.com"`) || strings.Contains(listResponse.Body.String(), `"email":"login@example.com","planType":"plus","isActive":true`) {
+		t.Fatalf("list body = %s, want imported account but not active", listResponse.Body.String())
+	}
+}
+
 func TestAccountAPIRemovedRoutesReturnNotFound(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
 
 	for _, response := range []*httptest.ResponseRecorder{
-		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/import-current", `{}`),
-		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/login-tasks/create", `{}`),
 		authenticatedRequest(t, handler, http.MethodGet, "/api/login-tasks/fake-login-1", ""),
 		authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/fake-login-1", ""),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`),
@@ -182,11 +227,28 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 
 	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry)
 	providerService := service.NewProviderService(providerRegistry)
+	testLoginImported = make(chan struct{}, 1)
+	loginTaskService, err := service.NewLoginTaskService(service.LoginTaskConfig{
+		UnitOfWork: dao.NewUnitOfWork(appDB.GORM()),
+		DAOs:       daos,
+		Resolver: codexruntime.NewResolver(codexruntime.Config{
+			ConfiguredBin: "/tmp/fake-codex",
+			Validator:     testRuntimeValidator{},
+		}),
+		Runner:   testLoginRunner{},
+		Importer: testLoginImporter{},
+		RootDir:  filepath.Join(t.TempDir(), "login-tasks"),
+		TaskTTL:  time.Minute,
+	})
+	if err != nil {
+		t.Fatalf("NewLoginTaskService() error = %v", err)
+	}
 
 	handler := router.NewHandler(router.Config{
-		SecurityManager: securityManager,
-		ProviderService: providerService,
-		AccountService:  accountService,
+		SecurityManager:  securityManager,
+		ProviderService:  providerService,
+		AccountService:   accountService,
+		LoginTaskService: loginTaskService,
 	})
 	return handler, func() {
 		if err := appDB.Close(); err != nil {
@@ -194,6 +256,8 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 		}
 	}
 }
+
+var testLoginImported chan struct{}
 
 func testAPIAccount(accountID string) entity.Account {
 	return entity.Account{
@@ -250,4 +314,72 @@ func assertBodyDoesNotLeakSensitiveData(t *testing.T, body string) {
 			t.Fatalf("response leaked %q: %s", forbidden, body)
 		}
 	}
+}
+
+type testRuntimeValidator struct{}
+
+func (testRuntimeValidator) Validate(context.Context, string) error {
+	return nil
+}
+
+type testLoginRunner struct{}
+
+func (testLoginRunner) Run(_ context.Context, input loginrunner.Input) (loginrunner.Result, error) {
+	if input.OnProgress != nil {
+		loginURL := "https://chatgpt.com/codex/login"
+		input.OnProgress(loginrunner.Progress{LoginURL: &loginURL})
+	}
+	return loginrunner.Result{CodexHome: input.CodexHome}, nil
+}
+
+type testLoginImporter struct{}
+
+func (testLoginImporter) ReadAccountFromCodexDir(context.Context, string) (*entity.Account, error) {
+	email := "login@example.com"
+	planType := "plus"
+	accountID := entity.AccountIDFromEmail(email)
+	return &entity.Account{
+		ProviderID: "codex",
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount("codex", accountID),
+		Label:      email,
+		Email:      &email,
+		PlanType:   &planType,
+	}, nil
+}
+
+func (testLoginImporter) ImportAccountAuthFromCodexDir(context.Context, entity.Account, string) error {
+	select {
+	case testLoginImported <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func waitForLoginTaskImported(t *testing.T, handler http.Handler, taskID string) *httptest.ResponseRecorder {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		response := authenticatedRequest(t, handler, http.MethodGet, "/api/providers/codex/login-tasks/"+taskID, "")
+		if strings.Contains(response.Body.String(), `"status":"imported"`) {
+			return response
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return authenticatedRequest(t, handler, http.MethodGet, "/api/providers/codex/login-tasks/"+taskID, "")
+}
+
+func extractStringField(t *testing.T, body string, field string) string {
+	t.Helper()
+	var envelope struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(body), &envelope); err != nil {
+		t.Fatalf("decode response body: %v", err)
+	}
+	value, ok := envelope.Data[field].(string)
+	if !ok || value == "" {
+		t.Fatalf("field %s missing in body %s", field, body)
+	}
+	return value
 }

@@ -80,6 +80,37 @@ func (store *Store) ImportFromCodexDir(ctx context.Context, providerID string, s
 	return copyAuthAtomic(sourceAuth, filepath.Join(accountDir, authFileName))
 }
 
+// ValidateAccount 校验账号隔离目录中是否存在可用 auth.json。
+func (store *Store) ValidateAccount(ctx context.Context, providerID string, storageID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	accountDir, err := store.AccountCodexDir(providerID, storageID)
+	if err != nil {
+		return err
+	}
+	return validateAuthFile(filepath.Join(accountDir, authFileName))
+}
+
+// ExportToCodexDir 把账号隔离 auth.json 写入目标 CODEX_HOME。
+func (store *Store) ExportToCodexDir(ctx context.Context, providerID string, storageID string, targetCodexDir string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	accountDir, err := store.AccountCodexDir(providerID, storageID)
+	if err != nil {
+		return err
+	}
+	sourceAuth := filepath.Join(accountDir, authFileName)
+	if err := validateAuthFile(sourceAuth); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(targetCodexDir, 0o700); err != nil {
+		return fmt.Errorf("create target codex dir: %w", err)
+	}
+	return copyAuthAtomic(sourceAuth, filepath.Join(targetCodexDir, authFileName))
+}
+
 // ActivateAccount 把账号隔离 auth.json 原子替换为活动 CODEX_HOME 的 auth.json。
 func (store *Store) ActivateAccount(ctx context.Context, providerID string, storageID string) error {
 	if err := ctx.Err(); err != nil {

@@ -1,6 +1,7 @@
 const state = {
   providers: [],
   accounts: [],
+  loginTasks: new Map(),
   loading: false,
 };
 
@@ -52,6 +53,67 @@ async function createAccount(providerId) {
     showMessage("账号已新增");
     await loadData();
   });
+}
+
+async function createLoginTask(providerId) {
+  const expectedEmail = window.prompt("要登录的 OpenAI 账号邮箱（可留空）", "");
+  if (expectedEmail === null) {
+    return;
+  }
+  const email = expectedEmail.trim();
+  if (email && !isValidEmail(email)) {
+    showMessage("OpenAI 账号邮箱无效", true);
+    return;
+  }
+  const modeInput = window.prompt("登录方式：browser 或 device_code", "browser");
+  if (modeInput === null) {
+    return;
+  }
+  const mode = modeInput.trim() || "browser";
+  if (mode !== "browser" && mode !== "device_code") {
+    showMessage("登录方式只支持 browser 或 device_code", true);
+    return;
+  }
+
+  setLoading(true);
+  try {
+    const task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/create`, {
+      method: "POST",
+      body: { expectedEmail: email, mode },
+    });
+    state.loginTasks.set(task.taskId, task);
+    showLoginTaskMessage(task);
+    pollLoginTask(providerId, task.taskId);
+  } catch (error) {
+    showMessage(error.message || "创建登录任务失败", true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+async function pollLoginTask(providerId, taskId) {
+  for (;;) {
+    await delay(1500);
+    let task;
+    try {
+      task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/${encodeURIComponent(taskId)}`, {
+        method: "GET",
+        allowDataErrorCode: true,
+      });
+    } catch (error) {
+      showMessage(error.message || "查询登录任务失败", true);
+      return;
+    }
+    state.loginTasks.set(task.taskId, task);
+    showLoginTaskMessage(task);
+    if (task.status === "imported") {
+      await loadData();
+      return;
+    }
+    if (["failed", "cancelled", "expired"].includes(task.status)) {
+      return;
+    }
+  }
 }
 
 async function refreshAccountUsage(account) {
@@ -148,9 +210,9 @@ async function api(path, options) {
     throw new Error(message);
   }
   // 检查业务级别的错误码
-  if (envelope.data && envelope.data.errorCode) {
+  if (envelope.data && envelope.data.errorCode && !options.allowDataErrorCode) {
     const errorCode = envelope.data.errorCode;
-    const errorMessage = getErrorMessage(errorCode);
+    const errorMessage = envelope.data.errorMessage || getErrorMessage(errorCode);
     throw new Error(errorMessage);
   }
   return envelope.data;
@@ -195,7 +257,7 @@ function render() {
 
     const accounts = state.accounts.filter((account) => account.providerId === providerInfo.id);
     if (accounts.length === 0) {
-      section.append(emptyState("还没有账号", "新增一个 OpenAI 账号。"));
+      section.append(emptyState("还没有账号", "点击上方“登录添加 Codex 账号”导入隔离凭据。"));
     } else {
       const grid = document.createElement("div");
       grid.className = "account-grid";
@@ -222,10 +284,16 @@ function providerActions(providerInfo) {
   actions.className = "toolbar";
   const addButton = document.createElement("button");
   addButton.type = "button";
-  addButton.textContent = "新增账号";
-  addButton.disabled = state.loading;
-  addButton.addEventListener("click", () => createAccount(providerInfo.id));
+  addButton.textContent = "登录添加 Codex 账号";
+  addButton.disabled = state.loading || providerInfo.status !== "available";
+  addButton.addEventListener("click", () => createLoginTask(providerInfo.id));
   actions.append(addButton);
+  const manualButton = document.createElement("button");
+  manualButton.type = "button";
+  manualButton.textContent = "手动录入邮箱";
+  manualButton.disabled = state.loading || providerInfo.status !== "available";
+  manualButton.addEventListener("click", () => createAccount(providerInfo.id));
+  actions.append(manualButton);
   return actions;
 }
 
@@ -338,6 +406,35 @@ function showMessage(text, isError = false) {
   elements.message.classList.toggle("error", isError);
 }
 
+function showLoginTaskMessage(task) {
+  if (task.status === "waiting_for_user") {
+    if (task.userCode) {
+      showMessage(`请打开登录页并输入 device code：${task.userCode}`);
+      return;
+    }
+    showMessage("请在浏览器完成 Codex 登录。");
+    return;
+  }
+  if (task.status === "verifying") {
+    showMessage("正在校验 Codex 登录账号。");
+    return;
+  }
+  if (task.status === "imported") {
+    const label = task.account && (task.account.email || task.account.label || task.account.accountId);
+    showMessage(`账号已导入：${label || task.taskId}`);
+    return;
+  }
+  if (task.status === "failed" || task.status === "expired") {
+    showMessage(task.errorMessage || getErrorMessage(task.errorCode), true);
+    return;
+  }
+  if (task.status === "cancelled") {
+    showMessage("登录任务已取消", true);
+    return;
+  }
+  showMessage("Codex 登录任务已创建。");
+}
+
 function setLoading(loading) {
   state.loading = loading;
   document.querySelectorAll("button").forEach((btn) => {
@@ -366,4 +463,8 @@ function formatTime(value) {
     dateStyle: "short",
     timeStyle: "short",
   }).format(new Date(millis));
+}
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

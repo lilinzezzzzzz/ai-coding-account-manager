@@ -94,7 +94,8 @@ app-server；service 不依赖 Chi、GORM model 或 `infra`；GORM 只出现在 
 ./scripts/start-local.sh
 ```
 
-脚本会把临时二进制和 PID 文件写入 `.run/`。需要结束本地服务时执行：
+脚本默认使用项目根目录下的 `config/`、`.data/`、`.credentials/` 和 `.run/`。
+其中 `.run/` 保存临时二进制和 PID 文件。需要结束本地服务时执行：
 
 ```bash
 ./scripts/stop-local.sh
@@ -114,16 +115,10 @@ app-server；service 不依赖 Chi、GORM model 或 `infra`；GORM 只出现在 
 go run ./cmd/ai-coding-account-manager
 ```
 
-可通过环境变量覆盖监听地址，但只允许 loopback 地址：
+也可以显式指定配置文件：
 
 ```bash
-AI_CODING_ACCOUNT_MANAGER_BIND_ADDR=127.0.0.1:43127 go run ./cmd/ai-coding-account-manager
-```
-
-或通过脚本传入同样的环境变量：
-
-```bash
-AI_CODING_ACCOUNT_MANAGER_BIND_ADDR=127.0.0.1:43127 ./scripts/start-local.sh
+go run ./cmd/ai-coding-account-manager --config config/app.fake.json
 ```
 
 ## Docker 本地启动
@@ -189,18 +184,20 @@ error != null 表示业务失败，按 error.code 分支处理
 
 ## 配置
 
-当前配置来自环境变量，由 `internal/config` 在启动时读取和校验。
+当前配置读取顺序是：内置默认值、`config/app.json`。可参考
+`config/app.example.json` 创建本地 `config/app.json`。除 `CODEX_HOME` 作为外部工具
+约定的 fallback 外，不再使用 `AI_CODING_ACCOUNT_MANAGER_*` 环境变量作为正式配置入口。
 
-| 环境变量 | 默认值 | 说明 |
+| 配置字段 | 默认值 | 说明 |
 | --- | --- | --- |
-| `AI_CODING_ACCOUNT_MANAGER_BIND_ADDR` | `127.0.0.1:43127` | HTTP 监听地址，只允许 `127.0.0.1` 或 `localhost` |
-| `AI_CODING_ACCOUNT_MANAGER_CONTAINER` | 空 | 设为 `1` 时允许容器内监听 `0.0.0.0`，compose 仍只发布到宿主机 `127.0.0.1` |
-| `AI_CODING_ACCOUNT_MANAGER_DATA_DIR` | `${XDG_DATA_HOME:-~/.local/share}/ai-coding-account-manager` | SQLite、隔离凭据和运行数据目录 |
-| `AI_CODING_ACCOUNT_MANAGER_CODEX_BIN` | `codex` | Codex CLI 可执行文件路径 |
-| `AI_CODING_ACCOUNT_MANAGER_PROVIDER_MODE` | 空 | 设为 `fake` 时使用 fake provider |
-| `CODEX_HOME` | `~/.codex` | 活动 Codex 凭据目录 |
+| `bindAddr` | `127.0.0.1:43127` | HTTP 监听地址，只允许 `127.0.0.1` 或 `localhost` |
+| `dataDir` | `.data` | SQLite 和登录任务运行数据目录 |
+| `credentialsDir` | `.credentials` | 账号隔离凭据目录 |
+| `codexBin` | 空 | Codex CLI 可执行文件路径；空值时自动发现 |
+| `codexHome` | `CODEX_HOME` 或 `~/.codex` | 活动 Codex 凭据目录；配置文件优先于 `CODEX_HOME` |
+| `providerMode` | 空 | 设为 `fake` 时使用 fake provider |
 
-当前不使用根目录 `configs/` 配置文件目录。
+`scripts/start-local.sh` 固定使用 `.run/server.pid` 和 `.run/ai-coding-account-manager`。
 
 ## 安全边界
 
@@ -211,5 +208,7 @@ error != null 表示业务失败，按 error.code 分支处理
 - JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
 - 不把 token 或完整 `auth.json` 写入数据库、项目文件、浏览器持久化存储或 API
   响应。
+- `.credentials` 账号目录长期只保存 `auth.json`，刷新额度时的 Codex 运行态文件写入
+  临时目录并在结束后清理。
 - Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
   边界内。

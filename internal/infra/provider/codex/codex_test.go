@@ -67,6 +67,61 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	}
 }
 
+func TestProviderImportsCurrentAccountAuth(t *testing.T) {
+	tempDir := t.TempDir()
+	activeDir := filepath.Join(tempDir, "active")
+	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"current"}}`)
+	store := newTestStore(t, tempDir, activeDir)
+
+	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+		if cfg.CodexHome != activeDir {
+			t.Fatalf("CodexHome = %s, want active dir", cfg.CodexHome)
+		}
+		return &fakeCodexClient{responses: map[string]any{
+			"account/read": accountReadResponse{
+				Account: &codexAccount{Type: "chatgpt", Email: "current@example.com", PlanType: "plus"},
+			},
+		}}, nil
+	})
+
+	account, err := codexProvider.ImportCurrentAccount(context.Background())
+	if err != nil {
+		t.Fatalf("import current account: %v", err)
+	}
+	if account.AccountID != entity.AccountIDFromEmail("current@example.com") {
+		t.Fatalf("account id = %s, want email-derived id", account.AccountID)
+	}
+
+	accountDir, err := store.AccountCodexDir(providerID, account.StorageID)
+	if err != nil {
+		t.Fatalf("account dir: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(accountDir, "auth.json"))
+	if err != nil {
+		t.Fatalf("read imported auth: %v", err)
+	}
+	if string(content) != `{"tokens":{"access_token":"current"}}` {
+		t.Fatalf("imported auth content = %s", content)
+	}
+}
+
+func TestProviderAcceptsAccountWhenOpenAIAuthStillRequired(t *testing.T) {
+	account, err := mapAccount(accountReadResponse{
+		Account: &codexAccount{
+			Type:     "chatgpt",
+			Email:    "user@example.com",
+			PlanType: "plus",
+		},
+		RequiresOpenaiAuth: true,
+	})
+	if err != nil {
+		t.Fatalf("map account: %v", err)
+	}
+	if account.Email == nil || *account.Email != "user@example.com" {
+		t.Fatalf("email = %v, want user@example.com", account.Email)
+	}
+}
+
 type fakeCodexClient struct {
 	responses map[string]any
 	closed    bool
