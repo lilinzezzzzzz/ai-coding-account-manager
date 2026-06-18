@@ -34,6 +34,16 @@ type CreateManualAccountInput struct {
 	Email      string
 }
 
+// AccountAuthJSONImporter 描述支持导入 auth.json 的 provider 可选能力。
+type AccountAuthJSONImporter interface {
+	ImportAccountAuthJSON(context.Context, entity.Account, []byte) error
+}
+
+// AccountMetadataUsageRefresher 描述刷新 usage 时一并返回账号元数据的 provider 可选能力。
+type AccountMetadataUsageRefresher interface {
+	RefreshAccountWithMetadata(context.Context, entity.Account) (*entity.Account, *entity.UsageSnapshot, error)
+}
+
 // AccountService 编排账号生命周期、DAO 事务和 provider 调用。
 type AccountService struct {
 	uow       dao.UnitOfWork
@@ -106,6 +116,26 @@ func (service *AccountService) CreateManualAccount(ctx context.Context, input Cr
 		return AccountWithUsage{}, err
 	}
 	return AccountWithUsage{Account: persisted}, nil
+}
+
+// ImportAccountAuthJSON 为已有账号导入 auth.json，不切换当前活动账号。
+func (service *AccountService) ImportAccountAuthJSON(ctx context.Context, providerID string, accountID string, authJSON []byte) (entity.Account, error) {
+	registeredProvider, err := service.getProvider(providerID)
+	if err != nil {
+		return entity.Account{}, err
+	}
+	importer, ok := registeredProvider.(AccountAuthJSONImporter)
+	if !ok {
+		return entity.Account{}, entity.NewAppError(entity.ErrorCodeUnsupported)
+	}
+	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
+	if err != nil {
+		return entity.Account{}, err
+	}
+	if err := importer.ImportAccountAuthJSON(ctx, account, authJSON); err != nil {
+		return entity.Account{}, err
+	}
+	return account, nil
 }
 
 // ImportCurrentAccount 从 provider 当前活动登录态导入账号。
@@ -215,15 +245,27 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 		return result
 	}
 
-	snapshot, err := registeredProvider.RefreshAccount(ctx, account)
+	var refreshedAccount *entity.Account
+	var snapshot *entity.UsageSnapshot
+	if refresher, ok := registeredProvider.(AccountMetadataUsageRefresher); ok {
+		refreshedAccount, snapshot, err = refresher.RefreshAccountWithMetadata(ctx, account)
+	} else {
+		snapshot, err = registeredProvider.RefreshAccount(ctx, account)
+	}
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
+	if err := validateRefreshedAccount(account, refreshedAccount); err != nil {
+		result.ErrorCode = errorCodePtr(err)
+		result.ErrorMessage = errorMessagePtr(err)
+		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
+		return result
+	}
 	normalizedSnapshot := normalizeUsageSnapshot(account, *snapshot)
-	if err := service.daos.UsageSnapshots.Upsert(ctx, normalizedSnapshot); err != nil {
+	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
 		return result
@@ -241,6 +283,19 @@ func (service *AccountService) persistFailedUsage(ctx context.Context, account e
 		RefreshedAt: service.now().UTC().UnixMilli(),
 	}
 	return service.daos.UsageSnapshots.Upsert(ctx, snapshot)
+}
+
+func (service *AccountService) persistRefreshSuccess(ctx context.Context, account entity.Account, refreshedAccount *entity.Account, snapshot entity.UsageSnapshot) error {
+	if refreshedAccount == nil {
+		return service.daos.UsageSnapshots.Upsert(ctx, snapshot)
+	}
+	now := service.now().UTC().UnixMilli()
+	return service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
+		if err := daos.Accounts.UpdateMetadata(ctx, account.ProviderID, account.AccountID, refreshedAccount.Email, refreshedAccount.PlanType, now); err != nil {
+			return err
+		}
+		return daos.UsageSnapshots.Upsert(ctx, snapshot)
+	})
 }
 
 func (service *AccountService) normalizeAccount(providerID string, account entity.Account) entity.Account {
@@ -266,6 +321,19 @@ func normalizeUsageSnapshot(account entity.Account, snapshot entity.UsageSnapsho
 		snapshot.Status = entity.UsageStatusReady
 	}
 	return snapshot
+}
+
+func validateRefreshedAccount(account entity.Account, refreshed *entity.Account) error {
+	if refreshed == nil {
+		return nil
+	}
+	if refreshed.ProviderID != "" && refreshed.ProviderID != account.ProviderID {
+		return entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应 provider 与当前账号不一致")
+	}
+	if refreshed.AccountID != "" && refreshed.AccountID != account.AccountID {
+		return entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应账号与当前账号不一致")
+	}
+	return nil
 }
 
 func (service *AccountService) getProvider(providerID string) (provider.Provider, error) {

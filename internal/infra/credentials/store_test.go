@@ -54,6 +54,47 @@ func TestStoreImportsActivatesAndRemovesAuth(t *testing.T) {
 	}
 }
 
+func TestStoreImportsRawAuthJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	store, err := NewStore(Config{
+		RootDir:        filepath.Join(tempDir, "credentials"),
+		ActiveCodexDir: filepath.Join(tempDir, "active"),
+	})
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	authJSON := []byte(`{"tokens":{"access_token":"secret"}}`)
+	if err := store.ImportAuthJSON(context.Background(), "codex", "storage-1", authJSON); err != nil {
+		t.Fatalf("import raw auth json: %v", err)
+	}
+	accountDir, err := store.AccountCodexDir("codex", "storage-1")
+	if err != nil {
+		t.Fatalf("account dir: %v", err)
+	}
+	authPath := filepath.Join(accountDir, authFileName)
+	assertFileMode(t, authPath, 0o600)
+	content, err := os.ReadFile(authPath)
+	if err != nil {
+		t.Fatalf("read auth json: %v", err)
+	}
+	if string(content) != string(authJSON) {
+		t.Fatalf("auth content = %s, want %s", content, authJSON)
+	}
+}
+
+func TestStoreRejectsInvalidRawAuthJSON(t *testing.T) {
+	store, err := NewStore(Config{
+		RootDir:        filepath.Join(t.TempDir(), "credentials"),
+		ActiveCodexDir: filepath.Join(t.TempDir(), "active"),
+	})
+	if err != nil {
+		t.Fatalf("create store: %v", err)
+	}
+	if err := store.ImportAuthJSON(context.Background(), "codex", "storage-1", []byte(`not-json`)); err == nil {
+		t.Fatal("ImportAuthJSON accepted invalid JSON")
+	}
+}
+
 func TestStoreRejectsInvalidSegments(t *testing.T) {
 	store, err := NewStore(Config{
 		RootDir:        filepath.Join(t.TempDir(), "credentials"),

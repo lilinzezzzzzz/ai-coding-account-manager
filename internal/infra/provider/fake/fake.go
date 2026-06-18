@@ -2,6 +2,7 @@ package fake
 
 import (
 	"context"
+	"encoding/json"
 	"sort"
 	"sync"
 	"time"
@@ -35,6 +36,7 @@ type Provider struct {
 	unavailable   bool
 	accounts      map[string]entity.Account
 	usages        map[string]entity.UsageSnapshot
+	authJSONs     map[string]string
 	closed        bool
 }
 
@@ -64,6 +66,7 @@ func New(cfg Config) *Provider {
 		unavailable:   cfg.Unavailable,
 		accounts:      map[string]entity.Account{},
 		usages:        map[string]entity.UsageSnapshot{},
+		authJSONs:     map[string]string{},
 	}
 	for _, state := range cfg.Accounts {
 		account := state.Account
@@ -166,6 +169,44 @@ func (fakeProvider *Provider) RefreshAccount(_ context.Context, account entity.A
 		usage.RefreshedAt = time.Now().UTC().UnixMilli()
 	}
 	return &usage, nil
+}
+
+// RefreshAccountWithMetadata 返回 fake usage，并尽量返回 provider 侧账号元数据。
+func (fakeProvider *Provider) RefreshAccountWithMetadata(ctx context.Context, account entity.Account) (*entity.Account, *entity.UsageSnapshot, error) {
+	usage, err := fakeProvider.RefreshAccount(ctx, account)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fakeProvider.mu.Lock()
+	defer fakeProvider.mu.Unlock()
+
+	key := accountKey(account.ProviderID, account.AccountID)
+	refreshedAccount := account
+	if storedAccount, ok := fakeProvider.accounts[key]; ok {
+		refreshedAccount = storedAccount
+	}
+	return &refreshedAccount, usage, nil
+}
+
+// ImportAccountAuthJSON 校验并保存 fake 账号的 auth.json 内容。
+func (fakeProvider *Provider) ImportAccountAuthJSON(_ context.Context, account entity.Account, authJSON []byte) error {
+	fakeProvider.mu.Lock()
+	defer fakeProvider.mu.Unlock()
+
+	if err := fakeProvider.ensureAvailableLocked(); err != nil {
+		return err
+	}
+	key := accountKey(account.ProviderID, account.AccountID)
+	var value map[string]any
+	if err := json.Unmarshal(authJSON, &value); err != nil || len(value) == 0 {
+		return entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 无效")
+	}
+	if _, ok := fakeProvider.accounts[key]; !ok {
+		fakeProvider.accounts[key] = account
+	}
+	fakeProvider.authJSONs[key] = string(authJSON)
+	return nil
 }
 
 // ActivateAccount 校验目标账号可被激活。

@@ -43,9 +43,12 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 		}}, nil
 	})
 
-	snapshot, err := codexProvider.RefreshAccount(context.Background(), account)
+	refreshedAccount, snapshot, err := codexProvider.RefreshAccountWithMetadata(context.Background(), account)
 	if err != nil {
 		t.Fatalf("refresh account: %v", err)
+	}
+	if refreshedAccount.PlanType == nil || *refreshedAccount.PlanType != "plus" {
+		t.Fatalf("plan type = %v, want plus", refreshedAccount.PlanType)
 	}
 	if snapshot.UsedPercent == nil || *snapshot.UsedPercent != 42.5 {
 		t.Fatalf("used percent = %v", snapshot.UsedPercent)
@@ -64,6 +67,40 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	}
 	if string(content) != `{"tokens":{"access_token":"active"}}` {
 		t.Fatalf("active auth content = %s", content)
+	}
+}
+
+func TestProviderRejectsMismatchedAccountAuthOnRefresh(t *testing.T) {
+	tempDir := t.TempDir()
+	activeDir := filepath.Join(tempDir, "active")
+	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"active"}}`)
+	store := newTestStore(t, tempDir, activeDir)
+	accountID := entity.AccountIDFromEmail("user@example.com")
+	account := entity.Account{
+		ProviderID: providerID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(providerID, accountID),
+		Label:      "user@example.com",
+	}
+	if err := store.ImportFromCodexDir(context.Background(), providerID, account.StorageID, activeDir); err != nil {
+		t.Fatalf("import account credentials: %v", err)
+	}
+
+	codexProvider := newTestProvider(t, store, func(context.Context, appserver.Config) (appServerClient, error) {
+		return &fakeCodexClient{responses: map[string]any{
+			"account/read": accountReadResponse{
+				Account: &codexAccount{Type: "chatgpt", Email: "other@example.com", PlanType: "plus"},
+			},
+		}}, nil
+	})
+
+	_, _, err := codexProvider.RefreshAccountWithMetadata(context.Background(), account)
+	if err == nil {
+		t.Fatal("RefreshAccountWithMetadata accepted mismatched auth account")
+	}
+	appErr, ok := entity.AsAppError(err)
+	if !ok || appErr.ErrorCode() != entity.ErrorCodeConflict {
+		t.Fatalf("error = %v, want CONFLICT", err)
 	}
 }
 
@@ -102,6 +139,35 @@ func TestProviderImportsCurrentAccountAuth(t *testing.T) {
 	}
 	if string(content) != `{"tokens":{"access_token":"current"}}` {
 		t.Fatalf("imported auth content = %s", content)
+	}
+}
+
+func TestProviderImportsAccountAuthJSON(t *testing.T) {
+	tempDir := t.TempDir()
+	store := newTestStore(t, tempDir, filepath.Join(tempDir, "active"))
+	codexProvider := newTestProvider(t, store, nil)
+	accountID := entity.AccountIDFromEmail("raw@example.com")
+	account := entity.Account{
+		ProviderID: providerID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(providerID, accountID),
+		Label:      "raw@example.com",
+	}
+
+	authJSON := []byte(`{"tokens":{"access_token":"raw-secret"}}`)
+	if err := codexProvider.ImportAccountAuthJSON(context.Background(), account, authJSON); err != nil {
+		t.Fatalf("import account auth json: %v", err)
+	}
+	accountDir, err := store.AccountCodexDir(providerID, account.StorageID)
+	if err != nil {
+		t.Fatalf("account dir: %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(accountDir, "auth.json"))
+	if err != nil {
+		t.Fatalf("read imported auth: %v", err)
+	}
+	if string(content) != string(authJSON) {
+		t.Fatalf("imported auth content = %s, want %s", content, authJSON)
 	}
 }
 

@@ -16,7 +16,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -85,6 +86,18 @@ h1 {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.account-actions {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+
+.account-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 8px;
+  white-space: nowrap;
 }
 
 .message {
@@ -221,38 +234,120 @@ h1 {
 
 .usage {
   display: grid;
-  gap: 7px;
+  gap: 12px;
 }
 
-.usage-row {
+.usage-empty {
+  border: 1px dashed #cbd5df;
+  border-radius: 6px;
+  color: #617083;
+  font-size: 13px;
+  padding: 10px;
+}
+
+.usage-limit {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.usage-limit-title {
+  color: #18212f;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.usage-progress {
+  height: 10px;
+  border-radius: 999px;
+  background: #e5ebf1;
+  overflow: hidden;
+}
+
+.usage-progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: #202a37;
+}
+
+.usage-limit-detail {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
   color: #536273;
   font-size: 13px;
 }
 
-.usage-value {
+.usage-limit-detail > span:first-child {
   color: #18212f;
   font-weight: 750;
-  text-align: right;
 }
 
-.progress {
-  height: 8px;
-  border-radius: 999px;
-  background: #e4eaf0;
-  overflow: hidden;
-}
-
-.progress-bar {
-  height: 100%;
-  width: 0;
-  background: #3578b8;
+.usage-reset {
+  color: #617083;
+  text-align: left;
 }
 
 .danger {
   color: #a6342b;
+}
+
+.auth-dialog {
+  width: min(720px, calc(100vw - 28px));
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #18212f;
+  padding: 18px;
+}
+
+.auth-dialog::backdrop {
+  background: rgba(24, 33, 47, 0.45);
+}
+
+.auth-dialog form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-dialog h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.dialog-account {
+  margin: 0;
+  color: #617083;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.auth-dialog textarea {
+  width: 100%;
+  min-height: 260px;
+  resize: vertical;
+  border: 1px solid #c8d1dc;
+  border-radius: 6px;
+  color: #18212f;
+  font-family:
+    "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 10px;
+}
+
+.auth-dialog textarea:focus {
+  border-color: #70a8d8;
+  outline: 2px solid rgba(112, 168, 216, 0.25);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 @media (max-width: 720px) {
@@ -271,12 +366,15 @@ h1 {
     width: 100%;
   }
 
-  .toolbar button,
-  .account-actions button {
+  .toolbar button {
     flex: 1 1 140px;
   }
 
   .account-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dialog-actions {
+    flex-direction: column-reverse;
   }
 }

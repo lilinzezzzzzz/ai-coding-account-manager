@@ -113,44 +113,67 @@ func (providerImpl *Provider) ImportAccountAuthFromCodexDir(ctx context.Context,
 	return nil
 }
 
+// ImportAccountAuthJSON 把前端提交的 auth.json 内容导入账号隔离目录。
+func (providerImpl *Provider) ImportAccountAuthJSON(ctx context.Context, account entity.Account, authJSON []byte) error {
+	if err := providerImpl.credentials.ImportAuthJSON(ctx, providerID, account.StorageID, authJSON); err != nil {
+		return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "导入 Codex auth.json 失败", err)
+	}
+	return nil
+}
+
 // RefreshAccount 使用账号隔离 CODEX_HOME 刷新 usage。
 func (providerImpl *Provider) RefreshAccount(ctx context.Context, account entity.Account) (*entity.UsageSnapshot, error) {
+	_, snapshot, err := providerImpl.RefreshAccountWithMetadata(ctx, account)
+	return snapshot, err
+}
+
+// RefreshAccountWithMetadata 使用账号隔离 CODEX_HOME 刷新 usage，并返回最新账号元数据。
+func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, account entity.Account) (*entity.Account, *entity.UsageSnapshot, error) {
 	if err := providerImpl.credentials.ValidateAccount(ctx, providerID, account.StorageID); err != nil {
-		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "账号未导入 Codex auth.json，请先登录添加账号", err)
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "账号未导入 Codex auth.json，请先登录添加账号", err)
 	}
 	runtimeDir, err := os.MkdirTemp("", "ai-coding-account-manager-codex-home-*")
 	if err != nil {
-		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "创建 Codex 临时运行目录失败", err)
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "创建 Codex 临时运行目录失败", err)
 	}
 	defer func() {
 		_ = os.RemoveAll(runtimeDir)
 	}()
 	if err := providerImpl.credentials.ExportToCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
-		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
 	}
 
 	client, err := providerImpl.startClient(ctx, runtimeDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if _, err := providerImpl.readAccount(ctx, client, true); err != nil {
+	refreshedAccount, err := providerImpl.readAccount(ctx, client, true)
+	if err != nil {
 		_ = client.Close(context.Background())
-		return nil, err
+		return nil, nil, err
+	}
+	if refreshedAccount.AccountID != account.AccountID {
+		_ = client.Close(context.Background())
+		return nil, nil, entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应账号与当前账号不一致")
 	}
 
 	var response rateLimitsReadResponse
 	if err := client.Call(ctx, "account/rateLimits/read", map[string]any{}, &response); err != nil {
 		_ = client.Close(context.Background())
-		return nil, mapAppServerError("read Codex rate limits", err)
+		return nil, nil, mapAppServerError("read Codex rate limits failed", err)
 	}
 	if err := client.Close(context.Background()); err != nil {
-		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
 	}
 	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
-		return nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
 	}
-	return mapUsageSnapshot(account, response, providerImpl.now().UTC().UnixMilli())
+	snapshot, err := mapUsageSnapshot(account, response, providerImpl.now().UTC().UnixMilli())
+	if err != nil {
+		return nil, nil, err
+	}
+	return refreshedAccount, snapshot, nil
 }
 
 // ActivateAccount 替换活动 CODEX_HOME 的 auth.json。

@@ -58,6 +58,28 @@ func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
+// ImportAccountAuthJSON 为已有账号导入 auth.json。
+func (controller AccountController) ImportAccountAuthJSON(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
+	if err != nil {
+		return err
+	}
+	var request httpcontract.ImportAccountAuthJSONRequest
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	authJSON, err := request.NormalizedAuthJSON()
+	if err != nil {
+		return err
+	}
+	account, err := controller.accounts.ImportAccountAuthJSON(r.Context(), providerID, accountID, authJSON)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
+	return nil
+}
+
 // ImportCurrentAccount 从当前活动 Codex 登录态导入账号。
 func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, err := httpcontract.ProviderID(r)

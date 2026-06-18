@@ -118,18 +118,11 @@ async function pollLoginTask(providerId, taskId) {
 
 async function refreshAccountUsage(account) {
   await runAction(async () => {
-    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
       method: "POST",
       body: {},
     });
-    // 直接更新对应账号的 usage 信息，避免重新加载所有数据
-    const index = state.accounts.findIndex(
-      (a) => a.providerId === account.providerId && a.accountId === account.accountId
-    );
-    if (index !== -1 && result.usage) {
-      state.accounts[index].usage = result.usage;
-      render();
-    }
+    await loadData();
     showMessage("额度已刷新");
   });
 }
@@ -148,22 +141,17 @@ async function activateAccount(account) {
   });
 }
 
-async function renameAccount(account) {
-  const label = window.prompt("账号名称", account.label);
-  if (label === null) {
-    return;
-  }
-  const trimmed = label.trim();
-  if (!trimmed) {
-    showMessage("账号名称不能为空", true);
+async function importAccountAuthJSON(account) {
+  const authJson = await promptAuthJSON(account);
+  if (authJson === null) {
     return;
   }
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/rename`, {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/auth-json/import`, {
       method: "POST",
-      body: { label: trimmed },
+      body: { authJson },
     });
-    showMessage("账号名称已更新");
+    showMessage("auth.json 已导入");
     await loadData();
   });
 }
@@ -317,11 +305,10 @@ function accountCard(account, providerInfo) {
 
   const meta = document.createElement("div");
   meta.className = "meta";
-  meta.append(pill(account.email || "email 未知"));
   if (account.planType) {
     meta.append(pill(account.planType));
   }
-  meta.append(pill(shortId(account.accountId)));
+  meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   card.append(main);
 
@@ -329,11 +316,11 @@ function accountCard(account, providerInfo) {
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  actions.append(actionButton("刷新额度", () => refreshAccountUsage(account)));
+  actions.append(actionButton("刷新", () => refreshAccountUsage(account)));
+  actions.append(actionButton("导入", () => importAccountAuthJSON(account)));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(actionButton("激活", () => activateAccount(account)));
   }
-  actions.append(actionButton("重命名", () => renameAccount(account)));
   const deleteButton = actionButton("删除", () => deleteAccount(account));
   deleteButton.className = "danger";
   deleteButton.dataset.isActive = account.isActive;
@@ -347,30 +334,102 @@ function accountCard(account, providerInfo) {
 function usageBlock(usage) {
   const wrapper = document.createElement("div");
   wrapper.className = "usage";
-  const percent = usage && typeof usage.usedPercent === "number" ? usage.usedPercent : null;
-  const progress = document.createElement("div");
-  progress.className = "progress";
-  const bar = document.createElement("div");
-  bar.className = "progress-bar";
-  bar.style.width = `${Math.max(0, Math.min(100, percent || 0))}%`;
-  progress.append(bar);
-  wrapper.append(progress);
-  wrapper.append(usageRow("状态", usage ? usage.status : "未刷新"));
-  wrapper.append(usageRow("使用量", percent === null ? "未知" : `${percent.toFixed(1)}%`));
-  wrapper.append(usageRow("重置时间", usage && usage.resetsAt ? formatTime(usage.resetsAt) : "未知"));
+  const limits = usageLimitItems(usage);
+  if (limits.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "usage-empty";
+    empty.textContent = usage ? "额度数据不可用" : "额度未刷新";
+    wrapper.append(empty);
+    return wrapper;
+  }
+  for (const item of limits) {
+    wrapper.append(usageLimitBlock(item));
+  }
   return wrapper;
 }
 
-function usageRow(label, value) {
-  const row = document.createElement("div");
-  row.className = "usage-row";
-  const left = document.createElement("span");
-  left.textContent = label;
-  const right = document.createElement("span");
-  right.className = "usage-value";
-  right.textContent = value;
-  row.append(left, right);
-  return row;
+function usageLimitItems(usage) {
+  if (!usage) {
+    return [];
+  }
+  const snapshot = parseSnapshot(usage.snapshotJson);
+  const rateLimits = snapshot && snapshot.rateLimits ? snapshot.rateLimits : null;
+  if (rateLimits) {
+    return [
+      limitItem("5 小时限额", rateLimits.primary),
+      limitItem("7 天限额", rateLimits.secondary),
+    ].filter(Boolean);
+  }
+  if (typeof usage.usedPercent === "number") {
+    return [limitItem("5 小时限额", { usedPercent: usage.usedPercent, resetsAt: usage.resetsAt })].filter(Boolean);
+  }
+  return [];
+}
+
+function limitItem(label, limit) {
+  if (!limit || typeof limit.usedPercent !== "number") {
+    return null;
+  }
+  const usedPercent = clampPercent(limit.usedPercent);
+  return {
+    label,
+    usedPercent,
+    remainingPercent: clampPercent(100 - usedPercent),
+    resetsAt: limit.resetsAt || null,
+  };
+}
+
+function usageLimitBlock(item) {
+  const section = document.createElement("section");
+  section.className = "usage-limit";
+  const title = document.createElement("div");
+  title.className = "usage-limit-title";
+  title.textContent = `${item.label}:`;
+  section.append(title);
+
+  const progress = document.createElement("div");
+  progress.className = "usage-progress";
+  progress.setAttribute("role", "meter");
+  progress.setAttribute("aria-label", `${item.label}剩余额度`);
+  progress.setAttribute("aria-valuemin", "0");
+  progress.setAttribute("aria-valuemax", "100");
+  progress.setAttribute("aria-valuenow", `${Math.round(item.remainingPercent)}`);
+  const bar = document.createElement("div");
+  bar.className = "usage-progress-bar";
+  bar.style.width = `${item.remainingPercent}%`;
+  progress.append(bar);
+  section.append(progress);
+
+  const detail = document.createElement("div");
+  detail.className = "usage-limit-detail";
+  const remaining = document.createElement("span");
+  remaining.textContent = `剩余 ${formatPercent(item.remainingPercent)}`;
+  const reset = document.createElement("span");
+  reset.className = "usage-reset";
+  reset.textContent = `(重置时间：${item.resetsAt ? formatResetTime(item.resetsAt) : "未知"})`;
+  detail.append(remaining, reset);
+  section.append(detail);
+  return section;
+}
+
+function parseSnapshot(snapshotJson) {
+  if (!snapshotJson) {
+    return null;
+  }
+  try {
+    return JSON.parse(snapshotJson);
+  } catch (_) {
+    return null;
+  }
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, value));
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`;
 }
 
 function emptyState(title, detail) {
@@ -393,10 +452,69 @@ function actionButton(label, handler) {
   return button;
 }
 
-function pill(text) {
+function promptAuthJSON(account) {
+  return new Promise((resolve) => {
+    const dialog = document.createElement("dialog");
+    dialog.className = "auth-dialog";
+    const form = document.createElement("form");
+    form.method = "dialog";
+
+    const title = document.createElement("h2");
+    title.textContent = "导入 auth.json";
+    const accountName = document.createElement("p");
+    accountName.className = "dialog-account";
+    accountName.textContent = account.label || account.email || account.accountId;
+    const textarea = document.createElement("textarea");
+    textarea.name = "authJson";
+    textarea.rows = 14;
+    textarea.autocomplete = "off";
+    textarea.spellcheck = false;
+    textarea.placeholder = '{\n  "tokens": {}\n}';
+
+    const actions = document.createElement("div");
+    actions.className = "dialog-actions";
+    const cancelButton = document.createElement("button");
+    cancelButton.type = "button";
+    cancelButton.textContent = "取消";
+    const submitButton = document.createElement("button");
+    submitButton.type = "submit";
+    submitButton.textContent = "导入";
+    actions.append(cancelButton, submitButton);
+    form.append(title, accountName, textarea, actions);
+    dialog.append(form);
+    document.body.append(dialog);
+
+    const close = (value) => {
+      dialog.close();
+      dialog.remove();
+      resolve(value);
+    };
+    cancelButton.addEventListener("click", () => close(null));
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      close(null);
+    });
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = textarea.value.trim();
+      if (!value) {
+        textarea.focus();
+        return;
+      }
+      close(value);
+    });
+    dialog.showModal();
+    textarea.focus();
+  });
+}
+
+function pill(text, title) {
   const item = document.createElement("span");
   item.className = "pill";
   item.textContent = text;
+  if (title) {
+    item.title = title;
+  }
   return item;
 }
 
@@ -457,12 +575,32 @@ function shortId(value) {
   return `${value.slice(0, 10)}...${value.slice(-6)}`;
 }
 
-function formatTime(value) {
+function formatResetTime(value) {
   const millis = value < 100000000000 ? value * 1000 : value;
+  const date = new Date(millis);
+  const now = new Date();
+  if (
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate()
+  ) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return new Intl.DateTimeFormat("zh-CN", {
+      month: "numeric",
+      day: "numeric",
+    }).format(date);
+  }
   return new Intl.DateTimeFormat("zh-CN", {
-    dateStyle: "short",
-    timeStyle: "short",
-  }).format(new Date(millis));
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
 }
 
 function delay(ms) {

@@ -1,11 +1,14 @@
 package httpcontract
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
+
+const maxAuthJSONBytes = 2 * 1024 * 1024
 
 // AccountResponse 是账号列表和账号操作返回的 HTTP response。
 type AccountResponse struct {
@@ -58,6 +61,30 @@ func (request CreateAccountRequest) NormalizedEmail() (string, error) {
 		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "email 无效")
 	}
 	return email, nil
+}
+
+// ImportAccountAuthJSONRequest 是为已有账号导入 auth.json 的 HTTP request。
+type ImportAccountAuthJSONRequest struct {
+	AuthJSON string `json:"authJson"`
+}
+
+// NormalizedAuthJSON 返回已校验的 auth.json 内容。
+func (request ImportAccountAuthJSONRequest) NormalizedAuthJSON() ([]byte, error) {
+	authJSON := strings.TrimSpace(request.AuthJSON)
+	if authJSON == "" {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 内容不能为空")
+	}
+	if len(authJSON) > maxAuthJSONBytes {
+		return nil, entity.NewAppError(entity.ErrorCodePayloadTooLarge)
+	}
+	var value map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(authJSON), &value); err != nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 不是有效 JSON")
+	}
+	if len(value) == 0 {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 内容不能为空对象")
+	}
+	return []byte(authJSON), nil
 }
 
 // RefreshResultResponse 是单账号 usage 刷新结果的 HTTP response。

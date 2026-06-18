@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -78,6 +79,24 @@ func (store *Store) ImportFromCodexDir(ctx context.Context, providerID string, s
 		return fmt.Errorf("create account credentials dir: %w", err)
 	}
 	return copyAuthAtomic(sourceAuth, filepath.Join(accountDir, authFileName))
+}
+
+// ImportAuthJSON 把前端提交的 auth.json 内容写入账号隔离目录。
+func (store *Store) ImportAuthJSON(ctx context.Context, providerID string, storageID string, authJSON []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	accountDir, err := store.AccountCodexDir(providerID, storageID)
+	if err != nil {
+		return err
+	}
+	if err := validateAuthPayload(authJSON); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(accountDir, 0o700); err != nil {
+		return fmt.Errorf("create account credentials dir: %w", err)
+	}
+	return writeAuthAtomic(authJSON, filepath.Join(accountDir, authFileName))
 }
 
 // ValidateAccount 校验账号隔离目录中是否存在可用 auth.json。
@@ -188,6 +207,42 @@ func copyAuthAtomic(sourcePath string, targetPath string) error {
 	return nil
 }
 
+func writeAuthAtomic(content []byte, targetPath string) error {
+	if err := validateAuthPayload(content); err != nil {
+		return err
+	}
+
+	targetDir := filepath.Dir(targetPath)
+	tempFile, err := os.CreateTemp(targetDir, ".auth-*.json")
+	if err != nil {
+		return fmt.Errorf("create temp auth file: %w", err)
+	}
+	tempPath := tempFile.Name()
+	defer func() {
+		_ = os.Remove(tempPath)
+	}()
+
+	if _, err := tempFile.Write(content); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("write auth file: %w", err)
+	}
+	if err := tempFile.Chmod(0o600); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("chmod temp auth file: %w", err)
+	}
+	if err := tempFile.Sync(); err != nil {
+		_ = tempFile.Close()
+		return fmt.Errorf("sync temp auth file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		return fmt.Errorf("close temp auth file: %w", err)
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		return fmt.Errorf("replace auth file: %w", err)
+	}
+	return nil
+}
+
 func validateAuthFile(path string) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -195,13 +250,29 @@ func validateAuthFile(path string) error {
 	}
 	defer file.Close()
 
-	decoder := json.NewDecoder(io.LimitReader(file, 2*1024*1024))
+	payload, err := io.ReadAll(io.LimitReader(file, 2*1024*1024))
+	if err != nil {
+		return fmt.Errorf("read auth file: %w", err)
+	}
+	return validateAuthPayload(payload)
+}
+
+func validateAuthPayload(payload []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
 	var value map[string]any
 	if err := decoder.Decode(&value); err != nil {
-		return fmt.Errorf("decode auth file: %w", err)
+		return fmt.Errorf("decode auth json: %w", err)
 	}
 	if len(value) == 0 {
-		return fmt.Errorf("auth file is empty")
+		return fmt.Errorf("auth json is empty")
+	}
+
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("auth json contains multiple values")
+		}
+		return fmt.Errorf("decode auth json: %w", err)
 	}
 	return nil
 }

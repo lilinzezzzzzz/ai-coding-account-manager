@@ -74,10 +74,13 @@ func registerAccountRoutes(router chi.Router, accountController controller.Accou
 	}
 	jsonMutation := append([]func(http.Handler) http.Handler{}, mutation...)
 	jsonMutation = append(jsonMutation, middleware.RequireJSONContentType, middleware.LimitBodySize)
+	authJSONMutation := append([]func(http.Handler) http.Handler{}, mutation...)
+	authJSONMutation = append(authJSONMutation, middleware.RequireJSONContentType, middleware.LimitBodyBytes(2*1024*1024))
 
 	router.Get("/accounts", httptransport.Handle(accountController.ListAccounts))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/create", httptransport.Handle(accountController.CreateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/import-current", httptransport.Handle(accountController.ImportCurrentAccount))
+	router.With(authJSONMutation...).Post("/providers/{providerId}/accounts/{accountId}/auth-json/import", httptransport.Handle(accountController.ImportAccountAuthJSON))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/activate", httptransport.Handle(accountController.ActivateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/rename", httptransport.Handle(accountController.RenameAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/relogin", httptransport.Handle(accountController.ReloginAccount))

@@ -87,6 +87,10 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"acct-2"`) || !strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) {
 		t.Fatalf("refresh body = %s, want acct-2 ready usage", refreshResponse.Body.String())
 	}
+	updatedListResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if !strings.Contains(updatedListResponse.Body.String(), `"accountId":"acct-2"`) || !strings.Contains(updatedListResponse.Body.String(), `"planType":"plus"`) {
+		t.Fatalf("updated list body = %s, want acct-2 planType plus", updatedListResponse.Body.String())
+	}
 }
 
 func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
@@ -109,6 +113,44 @@ func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 	}
 	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"`+accountID+`"`) || !strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) {
 		t.Fatalf("refresh one body = %s, want refreshed manual account", refreshResponse.Body.String())
+	}
+}
+
+func TestAccountAPIImportAccountAuthJSON(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	bodyBytes, err := json.Marshal(map[string]string{
+		"authJson": `{"tokens":{"access_token":"secret","refresh_token":"refresh"}}`,
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/auth-json/import", string(bodyBytes))
+	if importResponse.Code != http.StatusOK {
+		t.Fatalf("import auth json status = %d, body = %s", importResponse.Code, importResponse.Body.String())
+	}
+	body := importResponse.Body.String()
+	assertBodyDoesNotLeakSensitiveData(t, body)
+	if !strings.Contains(body, `"accountId":"acct-1"`) {
+		t.Fatalf("import auth json body = %s, want acct-1", body)
+	}
+}
+
+func TestAccountAPIImportAccountAuthJSONRejectsInvalidJSON(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	bodyBytes, err := json.Marshal(map[string]string{"authJson": `not-json`})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/auth-json/import", string(bodyBytes))
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", response.Code)
+	}
+	if !strings.Contains(response.Body.String(), `"code":"VALIDATION_FAILED"`) {
+		t.Fatalf("body = %s, want validation failed", response.Body.String())
 	}
 }
 
@@ -202,12 +244,15 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 	}
 	daos := dao.NewDAOs(appDB.GORM())
 	providerRegistry := provider.NewRegistry()
+	fakeAcct2 := testAPIAccount("acct-2")
+	planType := "plus"
+	fakeAcct2.PlanType = &planType
 	fakeProvider := fake.New(fake.Config{
 		ID:          "codex",
 		DisplayName: "Codex Fake",
 		Accounts: []fake.AccountState{
 			{Account: testAPIAccount("acct-1"), Usage: testAPIUsage("acct-1", entity.UsageStatusReady)},
-			{Account: testAPIAccount("acct-2"), Usage: testAPIUsage("acct-2", entity.UsageStatusReady)},
+			{Account: fakeAcct2, Usage: testAPIUsage("acct-2", entity.UsageStatusReady)},
 		},
 	})
 	if err := providerRegistry.Register(context.Background(), fakeProvider); err != nil {

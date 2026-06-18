@@ -133,6 +133,25 @@ func (dao AccountDAO) UpdateLabel(ctx context.Context, providerID string, accoun
 	return nil
 }
 
+// UpdateMetadata 更新账号从 provider 读取到的元数据。
+func (dao AccountDAO) UpdateMetadata(ctx context.Context, providerID string, accountID string, email *string, planType *string, now int64) error {
+	result := dao.db.WithContext(ctx).
+		Model(&model.Account{}).
+		Where("provider_id = ? AND account_id = ?", providerID, accountID).
+		Updates(map[string]any{
+			"email":      email,
+			"plan_type":  planType,
+			"updated_at": now,
+		})
+	if result.Error != nil {
+		return mapDatabaseError(result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return entity.NewAppError(entity.ErrorCodeNotFound)
+	}
+	return nil
+}
+
 // SetActive 将同一 provider 下的活动账号切换到目标账号。
 func (dao AccountDAO) SetActive(ctx context.Context, providerID string, accountID string, now int64) error {
 	db := dao.db.WithContext(ctx)
