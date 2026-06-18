@@ -56,30 +56,11 @@ async function createAccount(providerId) {
 }
 
 async function createLoginTask(providerId) {
-  const expectedEmail = window.prompt("要登录的 OpenAI 账号邮箱（可留空）", "");
-  if (expectedEmail === null) {
-    return;
-  }
-  const email = expectedEmail.trim();
-  if (email && !isValidEmail(email)) {
-    showMessage("OpenAI 账号邮箱无效", true);
-    return;
-  }
-  const modeInput = window.prompt("登录方式：browser 或 device_code", "browser");
-  if (modeInput === null) {
-    return;
-  }
-  const mode = modeInput.trim() || "browser";
-  if (mode !== "browser" && mode !== "device_code") {
-    showMessage("登录方式只支持 browser 或 device_code", true);
-    return;
-  }
-
   setLoading(true);
   try {
     const task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/create`, {
       method: "POST",
-      body: { expectedEmail: email, mode },
+      body: { mode: "browser" },
     });
     state.loginTasks.set(task.taskId, task);
     showLoginTaskMessage(task);

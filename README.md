@@ -1,15 +1,14 @@
 # AI Coding Account Manager
 
-本项目是本地运行的 AI coding 工具多账号管理器。MVP 面向 OpenAI Codex
-账号，目标是在浏览器中查看账号和额度状态，并为账号新增、删除、切换和额度刷新
-保留清晰的后端边界。
+本项目是本地运行的 AI coding 工具多账号管理器。当前面向 OpenAI Codex
+账号，提供浏览器管理页面，用于导入账号凭据、查看账号和额度状态、刷新额度、
+切换活动账号和删除非活动账号。
 
-详细设计见 [TECHNICAL_DESIGN.md](TECHNICAL_DESIGN.md)，阶段拆解见
-[IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
+项目只在本机 loopback 地址提供服务，不设计为公网、局域网或多用户系统。SQLite
+只保存账号元数据和 usage snapshot；Codex `auth.json` 保存在账号隔离凭据目录中，
+不会写入数据库、浏览器持久化存储或 API 响应。
 
-## 当前状态
-
-项目处于 MVP 分阶段实现中，当前已包含：
+## 已实现能力
 
 - Go HTTP server 和 Chi router 装配。
 - `/api/health` 健康检查接口。
@@ -17,11 +16,94 @@
 - Host 校验、同源 Origin 校验、strict JSON 请求解析和 body size 限制。
 - SQLite/GORM 持久化底座、SQL migration、DAO、unit-of-work 和数据库启动校验。
 - Provider contract、registry、fake provider 和 provider service facade。
-- 账号核心 API、Codex app-server provider、隔离凭据目录和原子切换。
+- Codex app-server provider、runtime 发现、隔离凭据目录和活动账号原子切换。
+- Codex 登录任务：通过临时 `CODEX_HOME` 登录并导入账号 `auth.json`。
+- 账号核心 API：列表、登录添加、手动录入、重命名、导入 `auth.json`、刷新额度、设置套餐到期日、激活和删除。
 - 原生 HTML/CSS/JavaScript 管理页面。
-- Dockerfile、compose.yaml 和本地容器启动配置。
+- Dockerfile、compose.yaml 和本地启动/停止脚本。
 
-后续仍需补充更完整的真实 Codex 人工验收记录和发布打包流程。
+仍需人工按真实 Codex 账号环境补充发布前验收记录；自动化测试不能替代真实账号和
+IDE reload 验收。
+
+## 账号管理流程
+
+### 登录添加
+
+管理页面的“登录添加”按钮会直接创建 Codex browser 登录任务，不需要先输入邮箱。
+
+流程：
+
+1. 前端调用 `POST /api/providers/codex/login-tasks/create`，请求体为
+   `{"mode":"browser"}`。
+2. 后端创建临时 `CODEX_HOME`，并写入只影响本次登录任务的 Codex 配置。
+3. 用户在浏览器中完成官方 Codex 登录。
+4. 登录进程结束后，后端用 app-server 从临时 `CODEX_HOME` 读取真实账号 email 和套餐信息。
+5. 后端根据真实 email 生成稳定 `accountId`，把临时目录里的 `auth.json` 复制到
+   `.credentials/providers/codex/accounts/<account_id>/auth.json`。
+6. 临时登录目录被清理，账号列表刷新。
+
+注意：
+
+- 如果浏览器当前已登录其他 OpenAI/Codex 账号，官方登录页可能直接使用该账号。
+  需要在官方页面切换到目标账号，或使用无痕窗口。
+- API 仍支持可选 `expectedEmail`。提供后，登录完成读取到的账号 email 必须匹配，
+  否则任务失败且不会导入凭据。当前前端默认不传该字段。
+- 登录添加不会替换当前活动 `CODEX_HOME/auth.json`；只有点击“激活”才会切换活动账号。
+
+### 手动录入
+
+“手动录入”只根据输入的 OpenAI 邮箱创建本地账号元数据，不会创建真实 Codex
+凭据目录，也不能直接刷新真实额度。它适合先占位记录账号；真实使用前仍需要通过
+登录添加或导入 `auth.json` 补齐凭据。
+
+### 重命名
+
+`rename` API 可更新账号展示名称。当前前端未提供独立按钮；列表优先展示
+`label`，没有 label 时回退到 email 或 account id。
+
+### 导入 auth.json
+
+账号卡片里的“导入 auth.json”用于把已有 Codex 凭据内容导入指定账号的隔离目录。
+后端会解析 JSON 并校验账号归属，避免把不匹配的凭据写到当前账号下。不要把
+`auth.json` 内容提交到 Git、日志、issue 或聊天记录。
+
+### 刷新额度
+
+刷新单个账号时，后端会把该账号隔离目录中的 `auth.json` 复制到临时 Codex
+运行目录，启动 app-server 读取账号和 rate limit 信息，再把刷新后的
+`auth.json` 写回账号隔离目录。刷新不会修改当前活动账号。
+
+### 激活账号
+
+点击“激活”会把对应账号隔离目录里的 `auth.json` 原子替换到配置的活动
+`codexHome` 目录。已经运行中的 VS Code/Codex 进程可能仍持有旧 token，通常需要在
+VS Code 中执行 `Developer: Reload Window`。
+
+### 删除账号
+
+只能删除非活动账号。删除会移除数据库中的账号记录，并清理对应账号隔离凭据目录。
+
+## Codex 登录任务
+
+登录任务是短生命周期操作状态，默认存放在 `dataDir/login-tasks/` 下。任务完成、
+取消、失败或超时后会清理临时目录。
+
+登录任务使用隔离的临时 `CODEX_HOME`，并在该目录写入：
+
+```toml
+cli_auth_credentials_store = "file"
+```
+
+该配置只影响本次登录任务，目的是让 Codex 登录凭据落到临时目录里的
+`auth.json`，便于导入账号隔离目录。它不会修改用户默认 `~/.codex/config.toml`。
+
+登录任务状态：
+
+```text
+pending -> starting -> waiting_for_user -> verifying -> imported
+
+pending|starting|waiting_for_user|verifying -> failed|cancelled|expired
+```
 
 ## 项目结构
 
@@ -41,6 +123,8 @@ internal/service/               业务用例编排
 internal/dao/                   持久化访问边界
 internal/model/                 GORM 持久化模型
 internal/infra/                 database、provider、credentials、app-server 实现
+scripts/                        本地启动、停止脚本
+config/                         配置示例和 fake provider 配置
 ```
 
 ## 后端分层约定
@@ -79,7 +163,7 @@ client
 - `infra` 提供 database、provider、credentials 和 app-server 等具体技术实现，
   由 `cmd` 在启动时创建并通过构造函数注入上层。
 
-前端独立于后端 HTTP server 部署或运行。Controller 不直接操作数据库、凭证文件或
+前端资源由 Go server 提供静态文件。Controller 不直接操作数据库、凭证文件或
 app-server；service 不依赖 Chi、GORM model 或 `infra`；GORM 只出现在 `model`、
 `dao` 和 `infra/database` 中。
 
@@ -142,6 +226,8 @@ docker compose build
 
 ## 测试
 
+常规测试：
+
 ```bash
 go test ./...
 ```
@@ -151,6 +237,25 @@ go test ./...
 ```bash
 GOCACHE=/tmp/ai-coding-account-manager-go-build go test ./...
 ```
+
+发布前建议补充：
+
+```bash
+gofmt -l .
+go vet ./...
+go test -race ./...
+CGO_ENABLED=0 go build ./cmd/ai-coding-account-manager
+docker compose config
+docker compose build
+```
+
+真实 Codex 验收至少覆盖：
+
+- 登录添加账号后不修改原活动 `CODEX_HOME/auth.json`。
+- 新账号可以刷新额度并显示 email、plan 和 reset time。
+- 激活账号后，VS Code reload 后 Codex 使用目标账号。
+- 删除非活动账号后，对应 `.credentials` 子目录被清理。
+- `git status` 不出现凭据文件。
 
 ## API 响应约定
 
@@ -182,6 +287,30 @@ error == null 表示业务成功
 error != null 表示业务失败，按 error.code 分支处理
 ```
 
+## 主要 API
+
+```text
+GET    /api/health
+GET    /api/providers
+GET    /api/accounts
+POST   /api/providers/{providerId}/accounts/create
+POST   /api/providers/{providerId}/accounts/import-current
+POST   /api/providers/{providerId}/accounts/{accountId}/auth-json/import
+POST   /api/providers/{providerId}/accounts/{accountId}/activate
+POST   /api/providers/{providerId}/accounts/{accountId}/rename
+POST   /api/providers/{providerId}/accounts/{accountId}/plan-expiration/update
+POST   /api/providers/{providerId}/accounts/{accountId}/relogin
+POST   /api/providers/{providerId}/accounts/{accountId}/refresh
+DELETE /api/providers/{providerId}/accounts/{accountId}
+POST   /api/providers/{providerId}/login-tasks/create
+GET    /api/providers/{providerId}/login-tasks/{taskId}
+POST   /api/providers/{providerId}/login-tasks/{taskId}/cancel
+```
+
+所有写请求都需要同源 Origin。POST 请求需要 `Content-Type: application/json`；
+`auth-json/import` 还会使用单独的请求体大小限制。`relogin` 当前是保留路由，
+返回稳定 `UNSUPPORTED`。
+
 ## 配置
 
 当前配置读取顺序是：内置默认值、`config/app.json`。可参考
@@ -199,16 +328,52 @@ error != null 表示业务失败，按 error.code 分支处理
 
 `scripts/start-local.sh` 固定使用 `.run/server.pid` 和 `.run/ai-coding-account-manager`。
 
+## 数据目录
+
+默认本地目录：
+
+```text
+config/app.json                                      本地配置，默认被 Git 忽略
+.data/state.db                                      SQLite 数据库
+.data/login-tasks/<task_id>/                        登录任务临时目录
+.credentials/providers/codex/accounts/<account_id>/ 账号隔离凭据目录
+.run/                                               本地脚本运行目录
+```
+
+备份时建议同时保存 `.data/state.db` 和 `.credentials/`。只备份数据库无法恢复真实
+Codex 凭据；只备份凭据目录会丢失账号元数据、活动状态和 usage snapshot。
+
+可用以下方式做本地只读健康检查：
+
+```bash
+go test ./internal/infra/database
+```
+
+需要清理本地运行数据时，先停止服务，再按需删除 `.run/`、`.data/` 或
+`.credentials/`。删除 `.credentials/` 会移除所有已导入账号凭据。
+
 ## 安全边界
 
 - 不向局域网或公网暴露管理服务。
 - 只接受配置端口上的 `127.0.0.1` 或 `localhost` Host。
-- 写请求需要同源 Origin、`Content-Type: application/json`，并限制请求体不超过
-  16 KiB。
+- 写请求需要同源 Origin、`Content-Type: application/json`，并限制请求体大小。
 - JSON 请求体使用 strict decode，拒绝未知字段、空 body、多个 JSON 值和超大 body。
 - 不把 token 或完整 `auth.json` 写入数据库、项目文件、浏览器持久化存储或 API
   响应。
 - `.credentials` 账号目录长期只保存 `auth.json`，刷新额度时的 Codex 运行态文件写入
   临时目录并在结束后清理。
-- Codex 凭证文件读取、校验和原子替换逻辑应封装在 infra/provider/credentials
+- Codex 凭证文件读取、校验和原子替换逻辑封装在 `internal/infra/credentials`
   边界内。
+- 日志和错误响应只能包含脱敏上下文，不能输出 token、refresh token 或完整
+  `auth.json`。
+
+## 维护约定
+
+- 新增或修改 API 时，同步 `internal/router`、`internal/httpcontract`、测试和 README。
+- 新增持久化字段必须通过 SQL migration，不能用 `AutoMigrate` 作为正式 schema
+  变更路径。
+- 所有 I/O、app-server 和文件操作必须在数据库事务外执行。
+- 新增 provider 不得破坏通用账号主键、API envelope 和现有 Codex 账号隔离目录。
+- 修改 Docker 暴露方式必须重新评估 localhost 安全边界。
+- 修改凭证写入、导入、刷新或激活流程时，补充失败恢复测试和敏感字段泄漏检查。
+- 不用代码阅读代替测试结论；报告验收时写明实际执行的命令和结果。
