@@ -184,8 +184,9 @@ POST   /api/providers/{providerId}/login-tasks/{taskId}/cancel
 ## 项目结构
 
 ```text
-cmd/ai-coding-account-manager/  进程入口、配置加载、启动和关闭编排
+cmd/ai-coding-account-manager/  进程入口
 frontend/static/                前端静态资源
+internal/app/                   配置加载、依赖装配、启动和关闭编排
 internal/config/                启动配置读取和校验
 internal/router/                Chi router、路由注册和 middleware 组装
 internal/controller/            HTTP controller
