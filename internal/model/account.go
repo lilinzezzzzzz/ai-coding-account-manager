@@ -2,16 +2,17 @@ package model
 
 // Account 是 accounts 表的 GORM 持久化模型。
 type Account struct {
-	ProviderID string  `gorm:"column:provider_id;primaryKey"`
-	AccountID  string  `gorm:"column:account_id;primaryKey"`
-	StorageID  string  `gorm:"column:storage_id"`
-	Label      string  `gorm:"column:label"`
-	Email      *string `gorm:"column:email"`
-	PlanType   *string `gorm:"column:plan_type"`
-	IsActive   bool    `gorm:"column:is_active"`
-	CreatedAt  int64   `gorm:"column:created_at"`
-	UpdatedAt  int64   `gorm:"column:updated_at"`
-	LastUsedAt *int64  `gorm:"column:last_used_at"`
+	ProviderID    string  `gorm:"column:provider_id;primaryKey"`
+	AccountID     string  `gorm:"column:account_id;primaryKey"`
+	StorageID     string  `gorm:"column:storage_id"`
+	Label         string  `gorm:"column:label"`
+	Email         *string `gorm:"column:email"`
+	PlanType      *string `gorm:"column:plan_type"`
+	PlanExpiresAt *int64  `gorm:"column:plan_expires_at"`
+	IsActive      bool    `gorm:"column:is_active"`
+	CreatedAt     int64   `gorm:"column:created_at"`
+	UpdatedAt     int64   `gorm:"column:updated_at"`
+	LastUsedAt    *int64  `gorm:"column:last_used_at"`
 }
 
 // TableName 返回 accounts 表名。

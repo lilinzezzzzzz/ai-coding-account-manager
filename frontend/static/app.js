@@ -116,14 +116,14 @@ async function pollLoginTask(providerId, taskId) {
   }
 }
 
-async function refreshAccountUsage(account) {
+async function refreshAccount(account) {
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/usage/refresh`, {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/refresh`, {
       method: "POST",
       body: {},
     });
     await loadData();
-    showMessage("额度已刷新");
+    showMessage("账号状态已刷新");
   });
 }
 
@@ -308,6 +308,9 @@ function accountCard(account, providerInfo) {
   if (account.planType) {
     meta.append(pill(account.planType));
   }
+  if (account.planExpiresAt) {
+    meta.append(pill(`到期 ${formatPlanDate(account.planExpiresAt)}`));
+  }
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   card.append(main);
@@ -316,7 +319,7 @@ function accountCard(account, providerInfo) {
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  actions.append(actionButton("刷新", () => refreshAccountUsage(account)));
+  actions.append(actionButton("刷新", () => refreshAccount(account)));
   actions.append(actionButton("导入", () => importAccountAuthJSON(account)));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(actionButton("激活", () => activateAccount(account)));
@@ -576,31 +579,28 @@ function shortId(value) {
 }
 
 function formatResetTime(value) {
+  return formatUsageTimestamp(value);
+}
+
+function formatUsageTimestamp(value) {
   const millis = value < 100000000000 ? value * 1000 : value;
-  const date = new Date(millis);
-  const now = new Date();
-  if (
-    date.getFullYear() === now.getFullYear() &&
-    date.getMonth() === now.getMonth() &&
-    date.getDate() === now.getDate()
-  ) {
-    return new Intl.DateTimeFormat("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).format(date);
-  }
-  if (date.getFullYear() === now.getFullYear()) {
-    return new Intl.DateTimeFormat("zh-CN", {
-      month: "numeric",
-      day: "numeric",
-    }).format(date);
-  }
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "numeric",
     day: "numeric",
-  }).format(date);
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(millis));
+}
+
+function formatPlanDate(value) {
+  const millis = value < 100000000000 ? value * 1000 : value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(new Date(millis));
 }
 
 function delay(ms) {

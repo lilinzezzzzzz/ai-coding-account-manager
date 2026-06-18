@@ -12,17 +12,18 @@ const maxAuthJSONBytes = 2 * 1024 * 1024
 
 // AccountResponse 是账号列表和账号操作返回的 HTTP response。
 type AccountResponse struct {
-	ProviderID string                 `json:"providerId"`
-	AccountID  string                 `json:"accountId"`
-	StorageID  string                 `json:"storageId"`
-	Label      string                 `json:"label"`
-	Email      *string                `json:"email"`
-	PlanType   *string                `json:"planType"`
-	IsActive   bool                   `json:"isActive"`
-	CreatedAt  int64                  `json:"createdAt"`
-	UpdatedAt  int64                  `json:"updatedAt"`
-	LastUsedAt *int64                 `json:"lastUsedAt"`
-	Usage      *UsageSnapshotResponse `json:"usage"`
+	ProviderID    string                 `json:"providerId"`
+	AccountID     string                 `json:"accountId"`
+	StorageID     string                 `json:"storageId"`
+	Label         string                 `json:"label"`
+	Email         *string                `json:"email"`
+	PlanType      *string                `json:"planType"`
+	PlanExpiresAt *int64                 `json:"planExpiresAt"`
+	IsActive      bool                   `json:"isActive"`
+	CreatedAt     int64                  `json:"createdAt"`
+	UpdatedAt     int64                  `json:"updatedAt"`
+	LastUsedAt    *int64                 `json:"lastUsedAt"`
+	Usage         *UsageSnapshotResponse `json:"usage"`
 }
 
 // UsageSnapshotResponse 是 usage snapshot 的 HTTP response。
@@ -87,13 +88,13 @@ func (request ImportAccountAuthJSONRequest) NormalizedAuthJSON() ([]byte, error)
 	return []byte(authJSON), nil
 }
 
-// RefreshResultResponse 是单账号 usage 刷新结果的 HTTP response。
+// RefreshResultResponse 是单账号状态刷新结果的 HTTP response。
 type RefreshResultResponse struct {
-	ProviderID   string                 `json:"providerId"`
-	AccountID    string                 `json:"accountId"`
-	Usage        *UsageSnapshotResponse `json:"usage"`
-	ErrorCode    *entity.ErrorCode      `json:"errorCode"`
-	ErrorMessage *string                `json:"errorMessage"`
+	ProviderID   string            `json:"providerId"`
+	AccountID    string            `json:"accountId"`
+	Account      *AccountResponse  `json:"account"`
+	ErrorCode    *entity.ErrorCode `json:"errorCode"`
+	ErrorMessage *string           `json:"errorMessage"`
 }
 
 // AccountViewResponse 将 service 账号视图转换为 HTTP response。
@@ -104,16 +105,17 @@ func AccountViewResponse(view service.AccountWithUsage) AccountResponse {
 // AccountEntityResponse 将账号实体和 usage 转换为 HTTP response。
 func AccountEntityResponse(account entity.Account, usage *entity.UsageSnapshot) AccountResponse {
 	response := AccountResponse{
-		ProviderID: account.ProviderID,
-		AccountID:  account.AccountID,
-		StorageID:  account.StorageID,
-		Label:      account.Label,
-		Email:      account.Email,
-		PlanType:   account.PlanType,
-		IsActive:   account.IsActive,
-		CreatedAt:  account.CreatedAt,
-		UpdatedAt:  account.UpdatedAt,
-		LastUsedAt: account.LastUsedAt,
+		ProviderID:    account.ProviderID,
+		AccountID:     account.AccountID,
+		StorageID:     account.StorageID,
+		Label:         account.Label,
+		Email:         account.Email,
+		PlanType:      account.PlanType,
+		PlanExpiresAt: account.PlanExpiresAt,
+		IsActive:      account.IsActive,
+		CreatedAt:     account.CreatedAt,
+		UpdatedAt:     account.UpdatedAt,
+		LastUsedAt:    account.LastUsedAt,
 	}
 	if usage != nil {
 		usageResponse := UsageSnapshotHTTPResponse(*usage)
@@ -142,9 +144,9 @@ func RefreshResultHTTPResponse(result service.RefreshResult) RefreshResultRespon
 		ErrorCode:    result.ErrorCode,
 		ErrorMessage: result.ErrorMessage,
 	}
-	if result.Usage != nil {
-		usage := UsageSnapshotHTTPResponse(*result.Usage)
-		response.Usage = &usage
+	if result.Account != nil {
+		account := AccountViewResponse(*result.Account)
+		response.Account = &account
 	}
 	return response
 }

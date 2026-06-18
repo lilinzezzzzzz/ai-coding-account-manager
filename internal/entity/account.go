@@ -8,16 +8,17 @@ import (
 
 // Account 表示 provider-neutral 的账号元数据。
 type Account struct {
-	ProviderID string
-	AccountID  string
-	StorageID  string
-	Label      string
-	Email      *string
-	PlanType   *string
-	IsActive   bool
-	CreatedAt  int64
-	UpdatedAt  int64
-	LastUsedAt *int64
+	ProviderID    string
+	AccountID     string
+	StorageID     string
+	Label         string
+	Email         *string
+	PlanType      *string
+	PlanExpiresAt *int64
+	IsActive      bool
+	CreatedAt     int64
+	UpdatedAt     int64
+	LastUsedAt    *int64
 }
 
 // UsageStatus 表示账号 usage snapshot 的稳定状态。

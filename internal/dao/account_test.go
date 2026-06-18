@@ -87,6 +87,40 @@ func TestSetActiveSwitchesAccountWithinProvider(t *testing.T) {
 	}
 }
 
+func TestUpdateMetadataPersistsPlanExpiration(t *testing.T) {
+	db := openDAOTestDatabase(t)
+	defer closeDAOTestDatabase(t, db)
+
+	accounts := NewAccountDAO(db.GORM())
+	if err := accounts.Create(context.Background(), testAccount("codex", "acct-1", false)); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	email := "user@example.com"
+	planType := "plus"
+	planExpiresAt := int64(1767225600000)
+	if err := accounts.UpdateMetadata(context.Background(), "codex", "acct-1", &email, &planType, &planExpiresAt, 2000); err != nil {
+		t.Fatalf("UpdateMetadata() error = %v", err)
+	}
+
+	got, err := accounts.Get(context.Background(), "codex", "acct-1")
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if got.Email == nil || *got.Email != email {
+		t.Fatalf("email = %v, want %s", got.Email, email)
+	}
+	if got.PlanType == nil || *got.PlanType != planType {
+		t.Fatalf("plan type = %v, want %s", got.PlanType, planType)
+	}
+	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != planExpiresAt {
+		t.Fatalf("plan expires at = %v, want %d", got.PlanExpiresAt, planExpiresAt)
+	}
+	if got.UpdatedAt != 2000 {
+		t.Fatalf("updated at = %d, want 2000", got.UpdatedAt)
+	}
+}
+
 func TestUsageForeignKeyAndCascadeDelete(t *testing.T) {
 	db := openDAOTestDatabase(t)
 	defer closeDAOTestDatabase(t, db)

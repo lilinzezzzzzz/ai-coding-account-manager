@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	supportedSchemaVersion = 1
+	supportedSchemaVersion = 2
 	migrationDir           = "migrations"
 )
 

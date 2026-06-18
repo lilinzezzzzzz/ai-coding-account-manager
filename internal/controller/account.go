@@ -148,13 +148,13 @@ func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
-// RefreshAccountUsage 刷新单个账号 usage。
-func (controller AccountController) RefreshAccountUsage(w http.ResponseWriter, r *http.Request) error {
+// RefreshAccount 刷新单个账号状态。
+func (controller AccountController) RefreshAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
 	if err != nil {
 		return err
 	}
-	result, err := controller.accounts.RefreshAccountUsage(r.Context(), providerID, accountID)
+	result, err := controller.accounts.RefreshAccount(r.Context(), providerID, accountID)
 	if err != nil {
 		return err
 	}

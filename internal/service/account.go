@@ -19,11 +19,11 @@ type AccountWithUsage struct {
 	Usage   *entity.UsageSnapshot
 }
 
-// RefreshResult 表示单账号刷新结果。
+// RefreshResult 表示单账号状态刷新结果。
 type RefreshResult struct {
 	ProviderID   string
 	AccountID    string
-	Usage        *entity.UsageSnapshot
+	Account      *AccountWithUsage
 	ErrorCode    *entity.ErrorCode
 	ErrorMessage *string
 }
@@ -223,8 +223,8 @@ func (service *AccountService) DeleteAccount(ctx context.Context, providerID str
 	return registeredProvider.RemoveAccountData(ctx, account)
 }
 
-// RefreshAccountUsage 刷新单个账号 usage。
-func (service *AccountService) RefreshAccountUsage(ctx context.Context, providerID string, accountID string) (RefreshResult, error) {
+// RefreshAccount 刷新单个账号状态。
+func (service *AccountService) RefreshAccount(ctx context.Context, providerID string, accountID string) (RefreshResult, error) {
 	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
 	if err != nil {
 		return RefreshResult{}, err
@@ -265,12 +265,16 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 		return result
 	}
 	normalizedSnapshot := normalizeUsageSnapshot(account, *snapshot)
-	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot); err != nil {
+	refreshedViewAccount := mergeRefreshedAccount(account, refreshedAccount, service.now().UTC().UnixMilli())
+	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot, refreshedViewAccount.UpdatedAt); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
 		return result
 	}
-	result.Usage = &normalizedSnapshot
+	result.Account = &AccountWithUsage{
+		Account: refreshedViewAccount,
+		Usage:   &normalizedSnapshot,
+	}
 	return result
 }
 
@@ -285,13 +289,12 @@ func (service *AccountService) persistFailedUsage(ctx context.Context, account e
 	return service.daos.UsageSnapshots.Upsert(ctx, snapshot)
 }
 
-func (service *AccountService) persistRefreshSuccess(ctx context.Context, account entity.Account, refreshedAccount *entity.Account, snapshot entity.UsageSnapshot) error {
+func (service *AccountService) persistRefreshSuccess(ctx context.Context, account entity.Account, refreshedAccount *entity.Account, snapshot entity.UsageSnapshot, now int64) error {
 	if refreshedAccount == nil {
 		return service.daos.UsageSnapshots.Upsert(ctx, snapshot)
 	}
-	now := service.now().UTC().UnixMilli()
 	return service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
-		if err := daos.Accounts.UpdateMetadata(ctx, account.ProviderID, account.AccountID, refreshedAccount.Email, refreshedAccount.PlanType, now); err != nil {
+		if err := daos.Accounts.UpdateMetadata(ctx, account.ProviderID, account.AccountID, refreshedAccount.Email, refreshedAccount.PlanType, refreshedAccount.PlanExpiresAt, now); err != nil {
 			return err
 		}
 		return daos.UsageSnapshots.Upsert(ctx, snapshot)
@@ -321,6 +324,17 @@ func normalizeUsageSnapshot(account entity.Account, snapshot entity.UsageSnapsho
 		snapshot.Status = entity.UsageStatusReady
 	}
 	return snapshot
+}
+
+func mergeRefreshedAccount(account entity.Account, refreshed *entity.Account, now int64) entity.Account {
+	if refreshed == nil {
+		return account
+	}
+	account.Email = refreshed.Email
+	account.PlanType = refreshed.PlanType
+	account.PlanExpiresAt = refreshed.PlanExpiresAt
+	account.UpdatedAt = now
+	return account
 }
 
 func validateRefreshedAccount(account entity.Account, refreshed *entity.Account) error {

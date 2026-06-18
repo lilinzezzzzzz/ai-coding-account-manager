@@ -84,7 +84,7 @@ func registerAccountRoutes(router chi.Router, accountController controller.Accou
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/activate", httptransport.Handle(accountController.ActivateAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/rename", httptransport.Handle(accountController.RenameAccount))
 	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/relogin", httptransport.Handle(accountController.ReloginAccount))
-	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/usage/refresh", httptransport.Handle(accountController.RefreshAccountUsage))
+	router.With(jsonMutation...).Post("/providers/{providerId}/accounts/{accountId}/refresh", httptransport.Handle(accountController.RefreshAccount))
 	router.With(mutation...).Delete("/providers/{providerId}/accounts/{accountId}", httptransport.Handle(accountController.DeleteAccount))
 }
 

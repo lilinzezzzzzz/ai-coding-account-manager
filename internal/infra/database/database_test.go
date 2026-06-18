@@ -19,13 +19,14 @@ func TestOpenInitializesEmptyDatabase(t *testing.T) {
 	assertTableExists(t, db, "accounts")
 	assertTableExists(t, db, "usage_snapshots")
 	assertTableExists(t, db, "schema_migrations")
+	assertColumnExists(t, db, "accounts", "plan_expires_at")
 
 	var version int
 	if err := db.GORM().Model(&model.SchemaMigration{}).Select("MAX(version)").Scan(&version).Error; err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 1 {
-		t.Fatalf("schema version = %d, want 1", version)
+	if version != 2 {
+		t.Fatalf("schema version = %d, want 2", version)
 	}
 
 	var foreignKeys int
@@ -64,8 +65,8 @@ func TestOpenRunsMigrationsOnlyOnce(t *testing.T) {
 	if err := second.GORM().Model(&model.SchemaMigration{}).Count(&count).Error; err != nil {
 		t.Fatalf("count schema migrations: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("schema migration rows = %d, want 1", count)
+	if count != 2 {
+		t.Fatalf("schema migration rows = %d, want 2", count)
 	}
 }
 
@@ -135,5 +136,13 @@ func assertTableExists(t *testing.T, db *database.DB, tableName string) {
 
 	if !db.GORM().Migrator().HasTable(tableName) {
 		t.Fatalf("table %s does not exist", tableName)
+	}
+}
+
+func assertColumnExists(t *testing.T, db *database.DB, tableName string, columnName string) {
+	t.Helper()
+
+	if !db.GORM().Migrator().HasColumn(tableName, columnName) {
+		t.Fatalf("column %s.%s does not exist", tableName, columnName)
 	}
 }

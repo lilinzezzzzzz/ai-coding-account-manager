@@ -32,13 +32,17 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
 		return &fakeCodexClient{responses: map[string]any{
 			"account/read": accountReadResponse{
-				Account: &codexAccount{Type: "chatgpt", Email: "user@example.com", PlanType: "plus"},
+				Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
 			},
 			"account/rateLimits/read": rateLimitsReadResponse{
-				RateLimits: rateLimitSnapshot{Primary: &rateLimitWindow{
-					UsedPercent: floatPtr(42.5),
-					ResetsAt:    int64Ptr(1700000000000),
-				}},
+				RateLimits: rateLimitSnapshot{
+					Primary: &rateLimitWindow{
+						UsedPercent: floatPtr(42.5),
+						ResetsAt:    int64Ptr(1700000000000),
+					},
+					PlanType:      stringPtr("plus"),
+					PlanExpiresAt: int64Ptr(1767225600),
+				},
 			},
 		}}, nil
 	})
@@ -49,6 +53,9 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	}
 	if refreshedAccount.PlanType == nil || *refreshedAccount.PlanType != "plus" {
 		t.Fatalf("plan type = %v, want plus", refreshedAccount.PlanType)
+	}
+	if refreshedAccount.PlanExpiresAt == nil || *refreshedAccount.PlanExpiresAt != 1767225600000 {
+		t.Fatalf("plan expires at = %v, want 1767225600000", refreshedAccount.PlanExpiresAt)
 	}
 	if snapshot.UsedPercent == nil || *snapshot.UsedPercent != 42.5 {
 		t.Fatalf("used percent = %v", snapshot.UsedPercent)
@@ -252,5 +259,9 @@ func floatPtr(value float64) *float64 {
 }
 
 func int64Ptr(value int64) *int64 {
+	return &value
+}
+
+func stringPtr(value string) *string {
 	return &value
 }

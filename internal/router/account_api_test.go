@@ -80,16 +80,21 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 		t.Fatalf("delete inactive body = %s, want deleted", deleteInactiveResponse.Body.String())
 	}
 
-	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/usage/refresh", `{}`)
+	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/refresh", `{}`)
 	if refreshResponse.Code != http.StatusOK {
 		t.Fatalf("refresh status = %d, body = %s", refreshResponse.Code, refreshResponse.Body.String())
 	}
-	if !strings.Contains(refreshResponse.Body.String(), `"accountId":"acct-2"`) || !strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) {
-		t.Fatalf("refresh body = %s, want acct-2 ready usage", refreshResponse.Body.String())
+	if !strings.Contains(refreshResponse.Body.String(), `"account":{"providerId":"codex","accountId":"acct-2"`) ||
+		!strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) ||
+		!strings.Contains(refreshResponse.Body.String(), `"planType":"plus"`) ||
+		!strings.Contains(refreshResponse.Body.String(), `"planExpiresAt":1767225600000`) {
+		t.Fatalf("refresh body = %s, want acct-2 refreshed account state", refreshResponse.Body.String())
 	}
 	updatedListResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
-	if !strings.Contains(updatedListResponse.Body.String(), `"accountId":"acct-2"`) || !strings.Contains(updatedListResponse.Body.String(), `"planType":"plus"`) {
-		t.Fatalf("updated list body = %s, want acct-2 planType plus", updatedListResponse.Body.String())
+	if !strings.Contains(updatedListResponse.Body.String(), `"accountId":"acct-2"`) ||
+		!strings.Contains(updatedListResponse.Body.String(), `"planType":"plus"`) ||
+		!strings.Contains(updatedListResponse.Body.String(), `"planExpiresAt":1767225600000`) {
+		t.Fatalf("updated list body = %s, want acct-2 plan metadata", updatedListResponse.Body.String())
 	}
 }
 
@@ -107,7 +112,7 @@ func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 		t.Fatalf("create body = %s, want manual account", createResponse.Body.String())
 	}
 
-	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/"+accountID+"/usage/refresh", `{}`)
+	refreshResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/"+accountID+"/refresh", `{}`)
 	if refreshResponse.Code != http.StatusOK {
 		t.Fatalf("refresh one status = %d, body = %s", refreshResponse.Code, refreshResponse.Body.String())
 	}
@@ -205,6 +210,7 @@ func TestAccountAPIRemovedRoutesReturnNotFound(t *testing.T) {
 		authenticatedRequest(t, handler, http.MethodGet, "/api/login-tasks/fake-login-1", ""),
 		authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/fake-login-1", ""),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`),
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/usage/refresh", `{}`),
 	} {
 		body := response.Body.String()
 		if response.Code != http.StatusOK || !(strings.Contains(body, `"code":"NOT_FOUND"`) || strings.Contains(body, `"code":"METHOD_NOT_ALLOWED"`)) {
@@ -246,7 +252,9 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 	providerRegistry := provider.NewRegistry()
 	fakeAcct2 := testAPIAccount("acct-2")
 	planType := "plus"
+	planExpiresAt := int64(1767225600000)
 	fakeAcct2.PlanType = &planType
+	fakeAcct2.PlanExpiresAt = &planExpiresAt
 	fakeProvider := fake.New(fake.Config{
 		ID:          "codex",
 		DisplayName: "Codex Fake",
