@@ -82,15 +82,10 @@ func TestMutationBoundaryRejectsMissingOrigin(t *testing.T) {
 }
 
 func mutationBoundary(manager *security.Manager) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return middleware.RequireHost(manager)(
-			middleware.RequireOrigin(manager)(
-				middleware.RequireJSONContentType(
-					middleware.LimitBodySize(next),
-				),
-			),
-		)
-	}
+	return middleware.Chain(
+		middleware.RequireHost(manager),
+		middleware.JSONMutation(manager),
+	)
 }
 
 func newSecurityManager(t *testing.T) *security.Manager {

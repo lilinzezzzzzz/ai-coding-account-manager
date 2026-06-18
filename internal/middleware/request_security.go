@@ -14,6 +14,16 @@ const (
 	maxBodyBytes  = 16 * 1024
 )
 
+// Chain 按声明顺序组合多个中间件。
+func Chain(middlewares ...func(http.Handler) http.Handler) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		for index := len(middlewares) - 1; index >= 0; index-- {
+			next = middlewares[index](next)
+		}
+		return next
+	}
+}
+
 // RequireHost 拒绝非当前本地服务 Host 的请求。
 func RequireHost(manager *security.Manager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -38,6 +48,31 @@ func RequireOrigin(manager *security.Manager) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// Mutation 保护不要求 JSON 请求体的写操作。
+func Mutation(manager *security.Manager) func(http.Handler) http.Handler {
+	return Chain(
+		RequireOrigin(manager),
+	)
+}
+
+// JSONMutation 保护使用默认请求体大小限制的 JSON 写操作。
+func JSONMutation(manager *security.Manager) func(http.Handler) http.Handler {
+	return Chain(
+		RequireOrigin(manager),
+		RequireJSONContentType,
+		LimitBodySize,
+	)
+}
+
+// JSONMutationWithLimit 保护使用自定义请求体大小限制的 JSON 写操作。
+func JSONMutationWithLimit(manager *security.Manager, limit int64) func(http.Handler) http.Handler {
+	return Chain(
+		RequireOrigin(manager),
+		RequireJSONContentType,
+		LimitBodyBytes(limit),
+	)
 }
 
 // RequireJSONContentType 要求请求体使用 application/json。
