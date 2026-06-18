@@ -48,14 +48,6 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 		t.Fatalf("list body = %s, want seeded account with usage", listResponse.Body.String())
 	}
 
-	renameResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rename", `{"label":"Primary"}`)
-	if renameResponse.Code != http.StatusOK {
-		t.Fatalf("rename status = %d, body = %s", renameResponse.Code, renameResponse.Body.String())
-	}
-	if !strings.Contains(renameResponse.Body.String(), `"label":"Primary"`) {
-		t.Fatalf("rename body = %s, want updated label", renameResponse.Body.String())
-	}
-
 	deleteActiveResponse := authenticatedRequest(t, handler, http.MethodDelete, "/api/providers/codex/accounts/acct-1", "")
 	if deleteActiveResponse.Code != http.StatusOK {
 		t.Fatalf("delete active http status = %d, want 200 envelope", deleteActiveResponse.Code)
@@ -235,6 +227,7 @@ func TestAccountAPIRemovedRoutesReturnNotFound(t *testing.T) {
 		authenticatedRequest(t, handler, http.MethodGet, "/api/login-tasks/fake-login-1", ""),
 		authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/fake-login-1", ""),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`),
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rename", `{"label":"Primary"}`),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/usage/refresh", `{}`),
 	} {
 		body := response.Body.String()

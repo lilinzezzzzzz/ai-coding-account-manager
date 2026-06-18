@@ -167,15 +167,6 @@ func (service *AccountService) ImportCurrentAccount(ctx context.Context, provide
 	return AccountWithUsage{Account: persisted}, nil
 }
 
-// RenameAccount 更新账号 label。
-func (service *AccountService) RenameAccount(ctx context.Context, providerID string, accountID string, label string) (entity.Account, error) {
-	now := service.now().UTC().UnixMilli()
-	if err := service.daos.Accounts.UpdateLabel(ctx, providerID, accountID, label, now); err != nil {
-		return entity.Account{}, err
-	}
-	return service.daos.Accounts.Get(ctx, providerID, accountID)
-}
-
 // UpdatePlanExpiration 更新人工维护的套餐到期时间。
 func (service *AccountService) UpdatePlanExpiration(ctx context.Context, providerID string, accountID string, planExpiresAt *int64) (entity.Account, error) {
 	now := service.now().UTC().UnixMilli()

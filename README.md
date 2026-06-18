@@ -18,7 +18,7 @@
 - Provider contract、registry、fake provider 和 provider service facade。
 - Codex app-server provider、runtime 发现、隔离凭据目录和活动账号原子切换。
 - Codex 登录任务：通过临时 `CODEX_HOME` 登录并导入账号 `auth.json`。
-- 账号核心 API：列表、登录添加、手动录入、重命名、导入 `auth.json`、刷新额度、设置套餐到期日、激活和删除。
+- 账号核心 API：列表、登录添加、手动录入、导入 `auth.json`、刷新额度、设置套餐到期日、激活和删除。
 - 原生 HTML/CSS/JavaScript 管理页面。
 - Dockerfile、compose.yaml 和本地启动/停止脚本。
 
@@ -55,11 +55,6 @@ IDE reload 验收。
 “手动录入”只根据输入的 OpenAI 邮箱创建本地账号元数据，不会创建真实 Codex
 凭据目录，也不能直接刷新真实额度。它适合先占位记录账号；真实使用前仍需要通过
 登录添加或导入 `auth.json` 补齐凭据。
-
-### 重命名
-
-`rename` API 可更新账号展示名称。当前前端未提供独立按钮；列表优先展示
-`label`，没有 label 时回退到 email 或 account id。
 
 ### 导入 auth.json
 
@@ -297,7 +292,6 @@ POST   /api/providers/{providerId}/accounts/create
 POST   /api/providers/{providerId}/accounts/import-current
 POST   /api/providers/{providerId}/accounts/{accountId}/auth-json/import
 POST   /api/providers/{providerId}/accounts/{accountId}/activate
-POST   /api/providers/{providerId}/accounts/{accountId}/rename
 POST   /api/providers/{providerId}/accounts/{accountId}/plan-expiration/update
 POST   /api/providers/{providerId}/accounts/{accountId}/relogin
 POST   /api/providers/{providerId}/accounts/{accountId}/refresh

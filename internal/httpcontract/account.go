@@ -36,20 +36,6 @@ type UsageSnapshotResponse struct {
 	RefreshedAt  int64              `json:"refreshedAt"`
 }
 
-// RenameAccountRequest 是重命名账号的 HTTP request。
-type RenameAccountRequest struct {
-	Label string `json:"label"`
-}
-
-// NormalizedLabel 返回已校验和清理的账号展示名称。
-func (request RenameAccountRequest) NormalizedLabel() (string, error) {
-	label := strings.TrimSpace(request.Label)
-	if label == "" || len(label) > 120 {
-		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "label 长度必须在 1 到 120 之间")
-	}
-	return label, nil
-}
-
 // UpdatePlanExpirationRequest 是更新人工维护套餐到期时间的 HTTP request。
 type UpdatePlanExpirationRequest struct {
 	PlanExpiresAt json.RawMessage `json:"planExpiresAt"`

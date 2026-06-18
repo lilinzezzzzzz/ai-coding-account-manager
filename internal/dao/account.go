@@ -115,24 +115,6 @@ func (dao AccountDAO) ListAll(ctx context.Context, limit int) ([]entity.Account,
 	return accounts, nil
 }
 
-// UpdateLabel 更新账号展示名称。
-func (dao AccountDAO) UpdateLabel(ctx context.Context, providerID string, accountID string, label string, now int64) error {
-	result := dao.db.WithContext(ctx).
-		Model(&model.Account{}).
-		Where("provider_id = ? AND account_id = ?", providerID, accountID).
-		Updates(map[string]any{
-			"label":      label,
-			"updated_at": now,
-		})
-	if result.Error != nil {
-		return mapDatabaseError(result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return entity.NewAppError(entity.ErrorCodeNotFound)
-	}
-	return nil
-}
-
 // UpdateProviderMetadata 更新账号从 provider 读取到的元数据。
 func (dao AccountDAO) UpdateProviderMetadata(ctx context.Context, providerID string, accountID string, email *string, planType *string, now int64) error {
 	result := dao.db.WithContext(ctx).

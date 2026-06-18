@@ -94,28 +94,6 @@ func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, 
 	return nil
 }
 
-// RenameAccount 更新账号展示名称。
-func (controller AccountController) RenameAccount(w http.ResponseWriter, r *http.Request) error {
-	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
-	if err != nil {
-		return err
-	}
-	var request httpcontract.RenameAccountRequest
-	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
-		return err
-	}
-	label, err := request.NormalizedLabel()
-	if err != nil {
-		return err
-	}
-	account, err := controller.accounts.RenameAccount(r.Context(), providerID, accountID, label)
-	if err != nil {
-		return err
-	}
-	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
-	return nil
-}
-
 // UpdatePlanExpiration 更新人工维护的套餐到期时间。
 func (controller AccountController) UpdatePlanExpiration(w http.ResponseWriter, r *http.Request) error {
 	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
