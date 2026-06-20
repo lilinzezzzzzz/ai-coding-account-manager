@@ -7,6 +7,9 @@ const state = {
 };
 
 const successCode = "SUCCESS";
+const messageAutoHideMs = 4200;
+const errorMessageAutoHideMs = 7000;
+let messageHideTimer = 0;
 
 const elements = {
   message: document.querySelector("#message"),
@@ -685,10 +688,29 @@ function planExpirationPill(account) {
   return item;
 }
 
-function showMessage(text, isError = false) {
+function showMessage(text, isError = false, options = {}) {
+  clearMessageTimer();
   elements.message.hidden = false;
   elements.message.textContent = text;
   elements.message.classList.toggle("error", isError);
+  const timeoutMs = options.timeoutMs ?? (isError ? errorMessageAutoHideMs : messageAutoHideMs);
+  if (timeoutMs > 0) {
+    messageHideTimer = window.setTimeout(hideMessage, timeoutMs);
+  }
+}
+
+function hideMessage() {
+  clearMessageTimer();
+  elements.message.hidden = true;
+  elements.message.textContent = "";
+  elements.message.classList.remove("error");
+}
+
+function clearMessageTimer() {
+  if (messageHideTimer) {
+    window.clearTimeout(messageHideTimer);
+    messageHideTimer = 0;
+  }
 }
 
 function showLoginTaskMessage(task) {
