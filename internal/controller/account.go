@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
@@ -54,6 +55,7 @@ func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http
 	if err != nil {
 		return err
 	}
+	slog.Info("account created", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
 	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
 	return nil
 }
@@ -76,6 +78,7 @@ func (controller AccountController) ImportAccountAuthJSON(w http.ResponseWriter,
 	if err != nil {
 		return err
 	}
+	slog.Info("account auth imported", "provider_id", account.ProviderID, "account_id", account.AccountID)
 	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }
@@ -90,6 +93,7 @@ func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, 
 	if err != nil {
 		return err
 	}
+	slog.Info("current account imported", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
 	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
 	return nil
 }
@@ -112,6 +116,12 @@ func (controller AccountController) UpdatePlanExpiration(w http.ResponseWriter, 
 	if err != nil {
 		return err
 	}
+	slog.Info(
+		"account plan expiration updated",
+		"provider_id", account.ProviderID,
+		"account_id", account.AccountID,
+		"plan_expires_at_set", account.PlanExpiresAt != nil,
+	)
 	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }
@@ -131,6 +141,7 @@ func (controller AccountController) ActivateAccount(w http.ResponseWriter, r *ht
 	if err != nil {
 		return err
 	}
+	slog.Info("account activated", "provider_id", account.ProviderID, "account_id", account.AccountID)
 	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }
@@ -144,6 +155,7 @@ func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http
 	if err := controller.accounts.DeleteAccount(r.Context(), providerID, accountID); err != nil {
 		return err
 	}
+	slog.Info("account deleted", "provider_id", providerID, "account_id", accountID)
 	httptransport.WriteOK(w, map[string]bool{"deleted": true})
 	return nil
 }
@@ -157,6 +169,18 @@ func (controller AccountController) RefreshAccount(w http.ResponseWriter, r *htt
 	result, err := controller.accounts.RefreshAccount(r.Context(), providerID, accountID)
 	if err != nil {
 		return err
+	}
+	if result.Account != nil {
+		var usageStatus entity.UsageStatus
+		if result.Account.Usage != nil {
+			usageStatus = result.Account.Usage.Status
+		}
+		slog.Info(
+			"account refreshed",
+			"provider_id", result.ProviderID,
+			"account_id", result.AccountID,
+			"usage_status", usageStatus,
+		)
 	}
 	httptransport.WriteOK(w, httpcontract.RefreshResultHTTPResponse(result))
 	return nil

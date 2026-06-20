@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"sync"
 
@@ -94,6 +95,7 @@ func (registry *Registry) DescribeAll(ctx context.Context) []Description {
 	for id, registeredProvider := range providers {
 		description, err := registeredProvider.Describe(ctx)
 		if err != nil {
+			slog.Warn("provider describe failed", "provider_id", id, "error", err)
 			description = descriptions[id]
 			description.Status = StatusUnavailable
 			code := entity.ErrorCodeUnavailable

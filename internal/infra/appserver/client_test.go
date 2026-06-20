@@ -109,6 +109,26 @@ func TestStartUsesTemporarySQLiteHomeForCodexHome(t *testing.T) {
 	}
 }
 
+func TestStartIncludesStderrWhenInitializationFails(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_, err = Start(ctx, Config{
+		Bin: executable,
+		Env: []string{"AICAM_FAKE_APPSERVER=stderr-exit"},
+	})
+	if err == nil {
+		t.Fatal("Start() succeeded, want initialization error")
+	}
+	if !strings.Contains(err.Error(), "app-server stderr: fake app-server stderr detail") {
+		t.Fatalf("error = %v, want captured stderr", err)
+	}
+}
+
 func envMap(env []string) map[string]string {
 	values := map[string]string{}
 	for _, item := range env {
@@ -121,14 +141,19 @@ func envMap(env []string) map[string]string {
 }
 
 func TestMain(m *testing.M) {
-	if os.Getenv("AICAM_FAKE_APPSERVER") == "1" {
-		runFakeAppServer()
+	if mode := os.Getenv("AICAM_FAKE_APPSERVER"); mode != "" {
+		runFakeAppServer(mode)
 		return
 	}
 	os.Exit(m.Run())
 }
 
-func runFakeAppServer() {
+func runFakeAppServer(mode string) {
+	if mode == "stderr-exit" {
+		_, _ = fmt.Fprintln(os.Stderr, "fake app-server stderr detail")
+		return
+	}
+
 	scanner := bufio.NewScanner(os.Stdin)
 	encoder := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
@@ -169,6 +194,10 @@ func runFakeAppServer() {
 				},
 			})
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		_, _ = fmt.Fprintf(os.Stderr, "read fake app-server input: %v\n", err)
+		os.Exit(2)
 	}
 }
 

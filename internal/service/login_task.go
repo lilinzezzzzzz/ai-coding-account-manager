@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -326,6 +327,12 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 		task.ErrorCode = nil
 		task.ErrorMessage = nil
 	})
+	slog.Info(
+		"login task imported account",
+		"provider_id", persisted.ProviderID,
+		"task_id", taskID,
+		"account_id", persisted.AccountID,
+	)
 	service.cleanupTaskDir(taskID)
 }
 
@@ -414,6 +421,16 @@ func (service *LoginTaskService) failTask(taskID string, err error) {
 	state.task.ErrorCode = &code
 	state.task.ErrorMessage = &message
 	state.task.UpdatedAt = service.now().UTC().UnixMilli()
+	fields := []any{
+		"provider_id", state.task.ProviderID,
+		"task_id", taskID,
+		"error_code", code,
+		"error", err,
+	}
+	if appErr, ok := entity.AsAppError(err); ok && appErr.Cause != nil {
+		fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
+	}
+	slog.Warn("login task failed", fields...)
 }
 
 func (service *LoginTaskService) markCancelled(taskID string) {
@@ -422,6 +439,7 @@ func (service *LoginTaskService) markCancelled(taskID string) {
 	if state, ok := service.tasks[taskID]; ok && !isTerminalLoginTaskStatus(state.task.Status) {
 		state.task.Status = LoginTaskStatusCancelled
 		state.task.UpdatedAt = service.now().UTC().UnixMilli()
+		slog.Info("login task cancelled", "provider_id", state.task.ProviderID, "task_id", taskID)
 	}
 }
 
@@ -435,6 +453,7 @@ func (service *LoginTaskService) markExpired(taskID string) {
 		state.task.ErrorCode = &code
 		state.task.ErrorMessage = &message
 		state.task.UpdatedAt = service.now().UTC().UnixMilli()
+		slog.Warn("login task expired", "provider_id", state.task.ProviderID, "task_id", taskID, "error_code", code)
 	}
 }
 

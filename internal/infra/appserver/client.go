@@ -2,6 +2,7 @@ package appserver
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"sync"
 	"sync/atomic"
 )
+
+const maxCapturedStderrBytes = 16 * 1024
 
 // Client 是 Codex app-server JSON-RPC client。
 type Client struct {
@@ -77,7 +80,8 @@ func Start(ctx context.Context, cfg Config) (*Client, error) {
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start app-server: %w", err)
 	}
-	go discard(stderr)
+	stderrCapture := newLimitedBuffer(maxCapturedStderrBytes)
+	go capture(stderr, stderrCapture)
 
 	client := &Client{
 		cmd:         cmd,
@@ -89,7 +93,7 @@ func Start(ctx context.Context, cfg Config) (*Client, error) {
 
 	if err := client.initialize(ctx); err != nil {
 		_ = client.Close(context.Background())
-		return nil, err
+		return nil, withCapturedStderr(err, stderrCapture.String())
 	}
 	return client, nil
 }
@@ -238,8 +242,59 @@ func (client *Client) read(value any) error {
 	return nil
 }
 
-func discard(reader io.Reader) {
-	_, _ = io.Copy(io.Discard, reader)
+func capture(reader io.Reader, writer io.Writer) {
+	_, _ = io.Copy(writer, reader)
+}
+
+func withCapturedStderr(err error, stderr string) error {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return err
+	}
+	return fmt.Errorf("%w; app-server stderr: %s", err, stderr)
+}
+
+type limitedBuffer struct {
+	mu    sync.Mutex
+	limit int
+	buf   bytes.Buffer
+}
+
+func newLimitedBuffer(limit int) *limitedBuffer {
+	return &limitedBuffer{limit: limit}
+}
+
+func (buffer *limitedBuffer) Write(payload []byte) (int, error) {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+
+	written := len(payload)
+	if buffer.limit <= 0 {
+		return written, nil
+	}
+	if buffer.buf.Len()+len(payload) > buffer.limit {
+		overflow := buffer.buf.Len() + len(payload) - buffer.limit
+		current := buffer.buf.Bytes()
+		if overflow >= len(current) {
+			buffer.buf.Reset()
+		} else {
+			remaining := append([]byte(nil), current[overflow:]...)
+			buffer.buf.Reset()
+			_, _ = buffer.buf.Write(remaining)
+		}
+	}
+	if len(payload) > buffer.limit {
+		payload = payload[len(payload)-buffer.limit:]
+	}
+	_, _ = buffer.buf.Write(payload)
+	return written, nil
+}
+
+func (buffer *limitedBuffer) String() string {
+	buffer.mu.Lock()
+	defer buffer.mu.Unlock()
+
+	return buffer.buf.String()
 }
 
 type rpcRequest struct {

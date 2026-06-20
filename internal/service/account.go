@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -241,6 +243,7 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
+		logRefreshFailure(account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
@@ -255,12 +258,14 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
+		logRefreshFailure(account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
 	if err := validateRefreshedAccount(account, refreshedAccount); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
+		logRefreshFailure(account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
@@ -269,6 +274,7 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot, refreshedViewAccount.UpdatedAt); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
+		logRefreshFailure(account, result.ErrorCode, err)
 		return result
 	}
 	result.Account = &AccountWithUsage{
@@ -382,6 +388,21 @@ func errorMessagePtr(err error) *string {
 		return &message
 	}
 	return nil
+}
+
+func logRefreshFailure(account entity.Account, code *entity.ErrorCode, err error) {
+	fields := []any{
+		"provider_id", account.ProviderID,
+		"account_id", account.AccountID,
+		"error", err,
+	}
+	if code != nil {
+		fields = append(fields, "error_code", *code)
+	}
+	if appErr, ok := entity.AsAppError(err); ok && appErr.Cause != nil {
+		fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
+	}
+	slog.Warn("account refresh failed", fields...)
 }
 
 func accountKey(providerID string, accountID string) string {

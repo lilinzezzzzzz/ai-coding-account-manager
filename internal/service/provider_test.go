@@ -1,8 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
@@ -11,6 +14,13 @@ import (
 )
 
 func TestProviderServiceListProvidersIsolatesDescribeFailure(t *testing.T) {
+	var logs bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	t.Cleanup(func() {
+		slog.SetDefault(previousLogger)
+	})
+
 	registry := provider.NewRegistry()
 	available := fake.New(fake.Config{ID: "available", DisplayName: "Available"})
 	flaky := &serviceStubProvider{description: provider.Description{ID: "flaky", DisplayName: "Flaky"}}
@@ -32,6 +42,10 @@ func TestProviderServiceListProvidersIsolatesDescribeFailure(t *testing.T) {
 	}
 	if descriptions[1].ID != "flaky" || descriptions[1].Status != provider.StatusUnavailable {
 		t.Fatalf("second description = %+v, want flaky unavailable", descriptions[1])
+	}
+	logOutput := logs.String()
+	if !strings.Contains(logOutput, "provider describe failed") || !strings.Contains(logOutput, `"provider_id":"flaky"`) {
+		t.Fatalf("log output = %s, want provider describe failure", logOutput)
 	}
 }
 
