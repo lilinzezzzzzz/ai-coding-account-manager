@@ -130,6 +130,70 @@ running_pid() {
   printf '%s\n' "${pid}"
 }
 
+# Find an orphaned process listening on the given port.
+# Returns 0 with the PID on stdout if found, 1 otherwise.
+find_orphan_pid() {
+  local port="$1"
+  local pid
+
+  # Use ss to find the PID listening on this port
+  pid="$(ss -tlnp "sport = :${port}" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)"
+
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+
+  # Check if the process is our binary
+  local cmdline
+  cmdline="$(cat /proc/${pid}/cmdline 2>/dev/null | tr '\0' ' ' || true)"
+  if [[ "${cmdline}" == *"ai-coding-account-manager"* ]]; then
+    printf '%s\n' "${pid}"
+    return 0
+  fi
+
+  return 1
+}
+
+# Kill a process gracefully, falling back to SIGKILL.
+kill_process() {
+  local pid="$1"
+
+  kill "${pid}" 2>/dev/null || true
+  for _ in {1..50}; do
+    if ! kill -0 "${pid}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  # Graceful shutdown timed out, force kill
+  kill -9 "${pid}" 2>/dev/null || true
+  sleep 0.2
+}
+
+# Resolve the port from a config file and kill any orphaned process on it.
+# Returns 0 if an orphan was found and killed, 1 otherwise.
+cleanup_orphan() {
+  local config_file="$1"
+  local bind_addr
+  local port
+  local orphan_pid
+
+  bind_addr="$(config_bind_addr "${config_file}")"
+  port="${bind_addr##*:}"
+
+  if orphan_pid="$(find_orphan_pid "${port}")"; then
+    echo "Found orphaned process on port ${port} (PID: ${orphan_pid})"
+    echo "  Killing orphaned process..."
+    kill_process "${orphan_pid}"
+    rm -f "${PID_FILE}"
+    echo "  Orphaned process killed"
+    return 0
+  fi
+
+  return 1
+}
+
 parse_config_args() {
   CONFIG_FILE="${DEFAULT_CONFIG_FILE}"
   FOREGROUND=0
@@ -215,6 +279,9 @@ start_background() {
     exit 1
   fi
 
+  # Clean up orphaned process on the target port (no PID file but process alive)
+  cleanup_orphan "${config_file}" || true
+
   build_binary
   echo "Starting ${APP_NAME}"
   echo "  config file: ${config_file}"
@@ -256,6 +323,10 @@ stop_background() {
   local pid
 
   if [[ ! -f "${PID_FILE}" ]]; then
+    # No PID file — try to find and kill an orphaned process
+    if cleanup_orphan "${DEFAULT_CONFIG_FILE}"; then
+      return 0
+    fi
     echo "${APP_NAME} is not running: pid file not found"
     echo "  pid file: ${PID_FILE}"
     return 0
@@ -301,6 +372,20 @@ show_status() {
     echo "  pid: ${pid}"
     echo "  pid file: ${PID_FILE}"
     echo "  log file: ${LOG_FILE}"
+    return 0
+  fi
+
+  # Check for orphaned process (alive but no PID file)
+  local bind_addr
+  local port
+  local orphan_pid
+  bind_addr="$(config_bind_addr "${DEFAULT_CONFIG_FILE}")"
+  port="${bind_addr##*:}"
+  if orphan_pid="$(find_orphan_pid "${port}")"; then
+    echo "${APP_NAME} is running (orphaned, no PID file)"
+    echo "  pid: ${orphan_pid}"
+    echo "  log file: ${LOG_FILE}"
+    echo "  To fix: kill ${orphan_pid} && ./scripts/local.sh start"
     return 0
   fi
 
