@@ -46,6 +46,13 @@ func registerProviders(ctx context.Context, providerRegistry *provider.Registry,
 	codexProvider, err := codex.New(codex.Config{
 		Bin:         runtime.Path,
 		Credentials: credentialStore,
+		ResolveBin: func(ctx context.Context) (string, error) {
+			rt, err := runtimeResolver.Resolve(ctx)
+			if err != nil {
+				return "", err
+			}
+			return rt.Path, nil
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create codex provider: %w", err)

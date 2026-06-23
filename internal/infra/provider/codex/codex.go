@@ -33,6 +33,9 @@ type Config struct {
 	Credentials   *credentials.Store
 	ClientFactory ClientFactory
 	Now           func() time.Time
+	// ResolveBin 返回当前可用的 codex 二进制路径。
+	// 在启动 app-server 失败时用于重新发现 runtime 路径（例如 VS Code 扩展自动更新后）。
+	ResolveBin func(context.Context) (string, error)
 }
 
 // Provider 实现 OpenAI Codex 账号 provider。
@@ -40,6 +43,7 @@ type Provider struct {
 	bin         string
 	credentials *credentials.Store
 	newClient   ClientFactory
+	resolveBin  func(context.Context) (string, error)
 	now         func() time.Time
 }
 
@@ -62,6 +66,7 @@ func New(cfg Config) (*Provider, error) {
 		bin:         cfg.Bin,
 		credentials: cfg.Credentials,
 		newClient:   newClient,
+		resolveBin:  cfg.ResolveBin,
 		now:         now,
 	}, nil
 }
@@ -203,6 +208,19 @@ func (providerImpl *Provider) startClient(ctx context.Context, codexHome string)
 		CodexHome: codexHome,
 	})
 	if err != nil {
+		// 二进制路径可能已过期（例如 VS Code 扩展自动更新），尝试重新解析。
+		if providerImpl.resolveBin != nil {
+			if newBin, resolveErr := providerImpl.resolveBin(ctx); resolveErr == nil && newBin != providerImpl.bin {
+				providerImpl.bin = newBin
+				client, err = providerImpl.newClient(ctx, appserver.Config{
+					Bin:       newBin,
+					CodexHome: codexHome,
+				})
+				if err == nil {
+					return client, nil
+				}
+			}
+		}
 		return nil, mapAppServerError("start Codex app-server", err)
 	}
 	return client, nil
