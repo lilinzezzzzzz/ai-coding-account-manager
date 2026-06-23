@@ -42,6 +42,75 @@ button:disabled {
   background: #eef2f6;
 }
 
+button.primary {
+  border-color: #18212f;
+  background: #18212f;
+  color: #ffffff;
+}
+
+button.primary:hover {
+  border-color: #2c3a4d;
+  background: #2c3a4d;
+}
+
+button.primary:disabled {
+  border-color: #c8d1dc;
+  background: #eef2f6;
+  color: #8c98a8;
+}
+
+.add-menu {
+  position: relative;
+}
+
+.add-menu-trigger::after {
+  content: "";
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-left: 8px;
+  vertical-align: 2px;
+  border-top: 5px solid currentColor;
+  border-right: 4px solid transparent;
+  border-left: 4px solid transparent;
+}
+
+.add-menu-trigger[aria-expanded="true"]::after {
+  transform: rotate(180deg);
+}
+
+.add-menu-options {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  right: 0;
+  display: none;
+  min-width: 132px;
+  padding: 6px;
+  border: 1px solid #d6dee7;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 12px 28px rgb(24 33 47 / 14%);
+}
+
+.add-menu-trigger[aria-expanded="true"] + .add-menu-options {
+  display: grid;
+  gap: 2px;
+}
+
+.add-menu-options button {
+  width: 100%;
+  border-color: transparent;
+  background: transparent;
+  color: #18212f;
+  text-align: left;
+}
+
+.add-menu-options button:hover {
+  border-color: transparent;
+  background: #eef2f6;
+}
+
 .app-shell {
   width: min(1180px, 100%);
   margin: 0 auto;
@@ -447,6 +516,17 @@ h1 {
 
   .toolbar button {
     flex: 1 1 140px;
+  }
+
+  .add-menu,
+  .add-menu-trigger {
+    width: 100%;
+  }
+
+  .add-menu-options {
+    right: auto;
+    left: 0;
+    width: 100%;
   }
 
   .account-grid {

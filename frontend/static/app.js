@@ -1,3 +1,6 @@
+import { api, getErrorMessage } from "./api.js?v=split-modules";
+import { confirmDialog, promptAuthJSON, promptTextDialog } from "./dialogs.js?v=split-modules";
+
 const state = {
   providers: [],
   accounts: [],
@@ -6,7 +9,6 @@ const state = {
   loading: false,
 };
 
-const successCode = "SUCCESS";
 const messageAutoHideMs = 4200;
 const errorMessageAutoHideMs = 7000;
 let messageHideTimer = 0;
@@ -19,11 +21,27 @@ const elements = {
 boot();
 
 async function boot() {
+  setupGlobalEvents();
   try {
     await loadData();
   } catch (error) {
     showMessage(error.message || "初始化失败", true);
   }
+}
+
+function setupGlobalEvents() {
+  document.addEventListener("click", closeAddMenus);
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeAddMenus();
+    }
+  });
+}
+
+function closeAddMenus() {
+  document.querySelectorAll(".add-menu-trigger[aria-expanded='true']").forEach((trigger) => {
+    trigger.setAttribute("aria-expanded", "false");
+  });
 }
 
 async function loadData() {
@@ -43,7 +61,7 @@ async function loadData() {
 
 async function createAccount(providerId) {
   const email = await promptTextDialog({
-    title: "手动录入",
+    title: "手动添加",
     fieldName: "email",
     inputType: "email",
     autocomplete: "email",
@@ -229,51 +247,6 @@ async function runAction(action) {
   }
 }
 
-async function api(path, options) {
-  const init = {
-    method: options.method,
-    credentials: "same-origin",
-    headers: {},
-  };
-  if (options.body !== undefined) {
-    init.headers["Content-Type"] = "application/json";
-    init.body = JSON.stringify(options.body);
-  }
-
-  const response = await fetch(path, init);
-  const envelope = await response.json();
-  if (!response.ok || envelope.code !== successCode) {
-    throw new Error(envelope.message || `HTTP ${response.status}`);
-  }
-  // 检查业务级别的错误码
-  if (envelope.data && envelope.data.errorCode && !options.allowDataErrorCode) {
-    const errorCode = envelope.data.errorCode;
-    const errorMessage = envelope.data.errorMessage || getErrorMessage(errorCode);
-    throw new Error(errorMessage);
-  }
-  return envelope.data;
-}
-
-function getErrorMessage(errorCode) {
-  const messages = {
-    UNAUTHORIZED: "未登录或会话已失效",
-    FORBIDDEN: "请求被拒绝",
-    VALIDATION_FAILED: "请求参数无效",
-    PAYLOAD_TOO_LARGE: "请求体过大",
-    NOT_FOUND: "资源不存在",
-    METHOD_NOT_ALLOWED: "请求方法不支持",
-    UNSUPPORTED: "当前操作不支持",
-    UNAVAILABLE: "服务暂时不可用",
-    CONFLICT: "资源状态冲突",
-    OPERATION_IN_PROGRESS: "操作正在进行中",
-    STORAGE_BUSY: "数据库暂时繁忙，请稍后重试",
-    STORAGE_CORRUPTED: "数据库校验失败，请从备份恢复",
-    SCHEMA_TOO_NEW: "数据库版本高于当前程序支持版本",
-    INTERNAL: "服务内部错误",
-  };
-  return messages[errorCode] || "未知错误";
-}
-
 function render() {
   elements.providers.replaceChildren();
   if (state.providers.length === 0) {
@@ -293,7 +266,7 @@ function render() {
 
     const accounts = state.accounts.filter((account) => account.providerId === providerInfo.id);
     if (accounts.length === 0) {
-      section.append(emptyState("还没有账号", "点击上方“登录添加 Codex 账号”导入隔离凭据。"));
+      section.append(emptyState("还没有账号", "点击上方“添加”导入隔离凭据，或手动添加账号邮箱。"));
     } else {
       const grid = document.createElement("div");
       grid.className = "account-grid";
@@ -318,19 +291,44 @@ function providerTitle(providerInfo) {
 function providerActions(providerInfo) {
   const actions = document.createElement("div");
   actions.className = "toolbar";
-  const addButton = document.createElement("button");
-  addButton.type = "button";
-  addButton.textContent = "登录添加";
-  addButton.disabled = state.loading || providerInfo.status !== "available";
-  addButton.addEventListener("click", () => createLoginTask(providerInfo.id));
-  actions.append(addButton);
-  const manualButton = document.createElement("button");
-  manualButton.type = "button";
-  manualButton.textContent = "手动录入";
-  manualButton.disabled = state.loading || providerInfo.status !== "available";
-  manualButton.addEventListener("click", () => createAccount(providerInfo.id));
-  actions.append(manualButton);
+  const menu = document.createElement("div");
+  menu.className = "add-menu";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "primary add-menu-trigger";
+  trigger.textContent = "添加";
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.disabled = state.loading || providerInfo.status !== "available";
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const expanded = trigger.getAttribute("aria-expanded") === "true";
+    closeAddMenus();
+    trigger.setAttribute("aria-expanded", expanded ? "false" : "true");
+  });
+  menu.append(trigger);
+
+  const options = document.createElement("div");
+  options.className = "add-menu-options";
+  options.setAttribute("role", "menu");
+  options.append(addMenuItem("登录添加", () => createLoginTask(providerInfo.id), providerInfo));
+  options.append(addMenuItem("手动添加", () => createAccount(providerInfo.id), providerInfo));
+  menu.append(options);
+  actions.append(menu);
   return actions;
+}
+
+function addMenuItem(label, handler, providerInfo) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.setAttribute("role", "menuitem");
+  button.disabled = state.loading || providerInfo.status !== "available";
+  button.addEventListener("click", () => {
+    closeAddMenus();
+    handler();
+  });
+  return button;
 }
 
 function accountCard(account, providerInfo) {
@@ -370,9 +368,11 @@ function accountCard(account, providerInfo) {
   const actions = document.createElement("div");
   actions.className = "account-actions";
   actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isRefreshing));
-  actions.append(accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(accountActionButton("激活", () => activateAccount(account), isRefreshing));
+  }
+  if (!account.isActive) {
+    actions.append(accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing));
   }
   const deleteButton = accountActionButton("删除", () => deleteAccount(account), isRefreshing);
   deleteButton.className = "danger";
@@ -510,156 +510,6 @@ function accountActionButton(label, handler, accountRefreshing) {
   button.dataset.accountRefreshing = accountRefreshing ? "true" : "false";
   button.disabled = state.loading || accountRefreshing;
   return button;
-}
-
-function promptAuthJSON(account) {
-  const textarea = document.createElement("textarea");
-  textarea.name = "authJson";
-  textarea.rows = 14;
-  textarea.autocomplete = "off";
-  textarea.spellcheck = false;
-  textarea.placeholder = '{\n  "tokens": {}\n}';
-  return new Promise((resolve) => {
-    openFormDialog({
-      title: "导入 auth.json",
-      detail: account.label || account.email || account.accountId,
-      body: textarea,
-      submitText: "导入",
-      initialFocus: textarea,
-      validate: () => (textarea.value.trim() ? "" : "auth.json 内容不能为空"),
-      onSubmit: () => resolve(textarea.value.trim()),
-      onCancel: () => resolve(null),
-    });
-  });
-}
-
-function promptTextDialog(options) {
-  const input = document.createElement("input");
-  input.name = options.fieldName;
-  input.type = options.inputType || "text";
-  input.autocomplete = options.autocomplete || "off";
-  input.placeholder = options.placeholder || "";
-  input.value = options.initialValue || "";
-  return new Promise((resolve) => {
-    openFormDialog({
-      title: options.title,
-      detail: options.detail || "",
-      body: input,
-      submitText: options.submitText || "确定",
-      initialFocus: input,
-      validate: () => {
-        const value = input.value.trim();
-        if (options.validate) {
-          return options.validate(value);
-        }
-        return "";
-      },
-      onSubmit: () => resolve(input.value.trim()),
-      onCancel: () => resolve(null),
-    });
-  });
-}
-
-function confirmDialog(options) {
-  const detail = document.createElement("p");
-  detail.className = "dialog-detail";
-  detail.textContent = options.detail || "";
-  return new Promise((resolve) => {
-    openFormDialog({
-      title: options.title,
-      body: detail,
-      submitText: options.confirmText || "确定",
-      submitDanger: options.danger || false,
-      onSubmit: () => resolve(true),
-      onCancel: () => resolve(false),
-    });
-  });
-}
-
-function openFormDialog(options) {
-  const dialog = document.createElement("dialog");
-  dialog.className = "app-dialog";
-  const form = document.createElement("form");
-  form.method = "dialog";
-
-  const title = document.createElement("h2");
-  title.textContent = options.title;
-  form.append(title);
-
-  if (options.detail) {
-    const detail = document.createElement("p");
-    detail.className = "dialog-account";
-    detail.textContent = options.detail;
-    form.append(detail);
-  }
-
-  form.append(options.body);
-
-  const error = document.createElement("p");
-  error.className = "dialog-error";
-  error.hidden = true;
-  form.append(error);
-
-  const actions = document.createElement("div");
-  actions.className = "dialog-actions";
-  const cancelButton = document.createElement("button");
-  cancelButton.type = "button";
-  cancelButton.textContent = "取消";
-  const submitButton = document.createElement("button");
-  submitButton.type = "submit";
-  submitButton.textContent = options.submitText || "确定";
-  if (options.submitDanger) {
-    submitButton.classList.add("danger");
-  }
-  actions.append(cancelButton, submitButton);
-  form.append(actions);
-
-  dialog.append(form);
-  document.body.append(dialog);
-
-  let settled = false;
-  const close = (cancelled) => {
-    if (settled) {
-      return;
-    }
-    settled = true;
-    dialog.close();
-    dialog.remove();
-    if (cancelled && options.onCancel) {
-      options.onCancel();
-    }
-  };
-  cancelButton.addEventListener("click", () => close(true));
-  dialog.addEventListener("cancel", (event) => {
-    event.preventDefault();
-    close(true);
-  });
-  form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const message = options.validate ? options.validate() : "";
-    if (message) {
-      error.textContent = message;
-      error.hidden = false;
-      if (options.initialFocus) {
-        options.initialFocus.focus();
-      }
-      return;
-    }
-    if (settled) {
-      return;
-    }
-    settled = true;
-    dialog.close();
-    dialog.remove();
-    if (options.onSubmit) {
-      options.onSubmit();
-    }
-  });
-  dialog.showModal();
-  const initialFocus = options.initialFocus || dialog.querySelector("button[type='submit']");
-  if (initialFocus) {
-    initialFocus.focus();
-  }
 }
 
 function pill(text, title) {
