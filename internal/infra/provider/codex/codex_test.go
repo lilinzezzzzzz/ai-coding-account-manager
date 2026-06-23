@@ -29,27 +29,29 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 		t.Fatalf("import account credentials: %v", err)
 	}
 
-	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
-		return &fakeCodexClient{responses: map[string]any{
-			"account/read": accountReadResponse{
-				Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
-			},
-			"account/rateLimits/read": rateLimitsReadResponse{
-				RateLimits: rateLimitSnapshot{
-					Primary: &rateLimitWindow{
-						UsedPercent: floatPtr(42.5),
-						ResetsAt:    int64Ptr(1700000000000),
-					},
-					PlanType: stringPtr("plus"),
+	fakeClient := &fakeCodexClient{responses: map[string]any{
+		"account/read": accountReadResponse{
+			Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
+		},
+		"account/rateLimits/read": rateLimitsReadResponse{
+			RateLimits: rateLimitSnapshot{
+				Primary: &rateLimitWindow{
+					UsedPercent: floatPtr(42.5),
+					ResetsAt:    int64Ptr(1700000000000),
 				},
+				PlanType: stringPtr("plus"),
 			},
-		}}, nil
+		},
+	}}
+	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+		return fakeClient, nil
 	})
 
 	refreshedAccount, snapshot, err := codexProvider.RefreshAccountWithMetadata(context.Background(), account)
 	if err != nil {
 		t.Fatalf("refresh account: %v", err)
 	}
+	fakeClient.assertAccountReadRefreshToken(t, false)
 	if refreshedAccount.PlanType == nil || *refreshedAccount.PlanType != "plus" {
 		t.Fatalf("plan type = %v, want plus", refreshedAccount.PlanType)
 	}
@@ -116,21 +118,23 @@ func TestProviderImportsCurrentAccountAuth(t *testing.T) {
 	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"current"}}`)
 	store := newTestStore(t, tempDir, activeDir)
 
+	fakeClient := &fakeCodexClient{responses: map[string]any{
+		"account/read": accountReadResponse{
+			Account: &codexAccount{Type: "chatgpt", Email: "current@example.com", PlanType: "plus"},
+		},
+	}}
 	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
 		if cfg.CodexHome != activeDir {
 			t.Fatalf("CodexHome = %s, want active dir", cfg.CodexHome)
 		}
-		return &fakeCodexClient{responses: map[string]any{
-			"account/read": accountReadResponse{
-				Account: &codexAccount{Type: "chatgpt", Email: "current@example.com", PlanType: "plus"},
-			},
-		}}, nil
+		return fakeClient, nil
 	})
 
 	account, err := codexProvider.ImportCurrentAccount(context.Background())
 	if err != nil {
 		t.Fatalf("import current account: %v", err)
 	}
+	fakeClient.assertAccountReadRefreshToken(t, false)
 	if account.AccountID != entity.AccountIDFromEmail("current@example.com") {
 		t.Fatalf("account id = %s, want email-derived id", account.AccountID)
 	}
@@ -196,10 +200,17 @@ func TestProviderAcceptsAccountWhenOpenAIAuthStillRequired(t *testing.T) {
 
 type fakeCodexClient struct {
 	responses map[string]any
+	calls     []fakeCodexCall
 	closed    bool
 }
 
-func (client *fakeCodexClient) Call(_ context.Context, method string, _ any, result any) error {
+type fakeCodexCall struct {
+	method string
+	params any
+}
+
+func (client *fakeCodexClient) Call(_ context.Context, method string, params any, result any) error {
+	client.calls = append(client.calls, fakeCodexCall{method: method, params: params})
 	response, ok := client.responses[method]
 	if !ok {
 		return nil
@@ -214,6 +225,25 @@ func (client *fakeCodexClient) Call(_ context.Context, method string, _ any, res
 func (client *fakeCodexClient) Close(context.Context) error {
 	client.closed = true
 	return nil
+}
+
+func (client *fakeCodexClient) assertAccountReadRefreshToken(t *testing.T, want bool) {
+	t.Helper()
+
+	for _, call := range client.calls {
+		if call.method != "account/read" {
+			continue
+		}
+		params, ok := call.params.(accountReadParams)
+		if !ok {
+			t.Fatalf("account/read params type = %T, want accountReadParams", call.params)
+		}
+		if params.RefreshToken != want {
+			t.Fatalf("account/read refreshToken = %v, want %v", params.RefreshToken, want)
+		}
+		return
+	}
+	t.Fatal("account/read was not called")
 }
 
 func newTestProvider(t *testing.T, store *credentials.Store, factory ClientFactory) *Provider {

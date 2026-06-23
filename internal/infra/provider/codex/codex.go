@@ -107,7 +107,7 @@ func (providerImpl *Provider) ReadAccountFromCodexDir(ctx context.Context, codex
 	defer func() {
 		_ = client.Close(context.Background())
 	}()
-	return providerImpl.readAccount(ctx, client, true)
+	return providerImpl.readAccount(ctx, client, false)
 }
 
 // ImportAccountAuthFromCodexDir 把指定 CODEX_HOME 的 auth.json 导入账号隔离目录。
@@ -153,7 +153,7 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 		return nil, nil, err
 	}
 
-	refreshedAccount, err := providerImpl.readAccount(ctx, client, true)
+	refreshedAccount, err := providerImpl.readAccount(ctx, client, false)
 	if err != nil {
 		_ = client.Close(context.Background())
 		return nil, nil, err
