@@ -339,6 +339,9 @@ function accountCard(account, providerInfo) {
     card.setAttribute("aria-busy", "true");
   }
 
+  const header = document.createElement("div");
+  header.className = "account-card-header";
+
   const main = document.createElement("div");
   main.className = "account-main";
   const name = document.createElement("div");
@@ -361,7 +364,17 @@ function accountCard(account, providerInfo) {
   meta.append(planExpirationPill(account));
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
-  card.append(main);
+  header.append(main);
+  if (!account.isActive) {
+    const importButton = accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing);
+    importButton.className = "account-import-button";
+    importButton.textContent = "";
+    importButton.title = "导入 auth.json";
+    importButton.setAttribute("aria-label", "导入 auth.json");
+    importButton.append(importIcon());
+    header.append(importButton);
+  }
+  card.append(header);
 
   card.append(usageBlock(account.usage));
 
@@ -370,9 +383,6 @@ function accountCard(account, providerInfo) {
   actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isRefreshing));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(accountActionButton("激活", () => activateAccount(account), isRefreshing));
-  }
-  if (!account.isActive) {
-    actions.append(accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing));
   }
   const deleteButton = accountActionButton("删除", () => deleteAccount(account), isRefreshing);
   deleteButton.className = "danger";
@@ -510,6 +520,25 @@ function accountActionButton(label, handler, accountRefreshing) {
   button.dataset.accountRefreshing = accountRefreshing ? "true" : "false";
   button.disabled = state.loading || accountRefreshing;
   return button;
+}
+
+function importIcon() {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+
+  const paths = [
+    "M12 15V4",
+    "m7 9 5-5 5 5",
+    "M5 16v3.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V16",
+  ];
+  for (const pathData of paths) {
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", pathData);
+    svg.append(path);
+  }
+  return svg;
 }
 
 function pill(text, title) {

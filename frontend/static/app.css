@@ -75,6 +75,12 @@ button.primary:disabled {
   border-left: 4px solid transparent;
 }
 
+.add-menu-trigger {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+
 .add-menu-trigger[aria-expanded="true"]::after {
   transform: rotate(180deg);
 }
@@ -290,8 +296,59 @@ h1 {
   box-shadow: inset 0 0 0 1px #2f8f61;
 }
 
-.account-main {
+.account-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
   min-width: 0;
+}
+
+.account-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.account-import-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+  border-color: #cdd7e2;
+  background: #f8fafc;
+  color: #2c3a4d;
+  padding: 0;
+}
+
+.account-import-button:hover {
+  border-color: #8fa1b7;
+  background: #eef2f6;
+  color: #18212f;
+}
+
+.account-import-button:focus-visible {
+  border-color: #70a8d8;
+  outline: 2px solid rgba(112, 168, 216, 0.28);
+  outline-offset: 2px;
+}
+
+.account-import-button:disabled {
+  border-color: #c8d1dc;
+  background: #eef2f6;
+  color: #8c98a8;
+}
+
+.account-import-button svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .account-name {
