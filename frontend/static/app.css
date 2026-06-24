@@ -161,17 +161,22 @@ h1 {
 }
 
 .message {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 1000;
   display: grid;
   grid-template-columns: 18px 1fr;
   align-items: start;
   gap: 10px;
   width: fit-content;
   max-width: min(520px, calc(100vw - 28px));
-  margin: 14px auto 0;
+  margin: 0;
   color: #1f6544;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.45;
+  translate: -50% 0;
   overflow-wrap: anywhere;
   animation: message-enter 140ms ease-out;
 }
@@ -207,12 +212,12 @@ h1 {
 @keyframes message-enter {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    translate: -50% -4px;
   }
 
   to {
     opacity: 1;
-    transform: translateY(0);
+    translate: -50% 0;
   }
 }
 
