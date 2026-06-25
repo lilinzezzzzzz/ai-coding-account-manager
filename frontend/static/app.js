@@ -59,25 +59,17 @@ async function loadData() {
   }
 }
 
-async function createAccount(providerId) {
-  const email = await promptTextDialog({
-    title: "手动添加",
-    fieldName: "email",
-    inputType: "email",
-    autocomplete: "email",
-    placeholder: "name@example.com",
-    submitText: "新增",
-    validate: (value) => (isValidEmail(value) ? "" : "OpenAI 账号邮箱无效"),
-  });
-  if (email === null) {
+async function importProviderAuthJSON(providerId) {
+  const authJson = await promptAuthJSON();
+  if (authJson === null) {
     return;
   }
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/create`, {
+    await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/auth-json/import`, {
       method: "POST",
-      body: { email },
+      body: { authJson },
     });
-    showMessage("账号已新增");
+    showMessage("账号已导入并刷新");
     await loadData();
   });
 }
@@ -202,21 +194,6 @@ async function activateAccount(account) {
   });
 }
 
-async function importAccountAuthJSON(account) {
-  const authJson = await promptAuthJSON(account);
-  if (authJson === null) {
-    return;
-  }
-  await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/auth-json/import`, {
-      method: "POST",
-      body: { authJson },
-    });
-    showMessage("auth.json 已导入");
-    await loadData();
-  });
-}
-
 async function deleteAccount(account) {
   const confirmed = await confirmDialog({
     title: "删除账号",
@@ -266,7 +243,7 @@ function render() {
 
     const accounts = state.accounts.filter((account) => account.providerId === providerInfo.id);
     if (accounts.length === 0) {
-      section.append(emptyState("还没有账号", "点击上方“添加”导入隔离凭据，或手动添加账号邮箱。"));
+      section.append(emptyState("还没有账号", "点击上方“添加”导入 auth.json，后端会自动识别并刷新账号。"));
     } else {
       const grid = document.createElement("div");
       grid.className = "account-grid";
@@ -312,7 +289,7 @@ function providerActions(providerInfo) {
   options.className = "add-menu-options";
   options.setAttribute("role", "menu");
   options.append(addMenuItem("登录添加", () => createLoginTask(providerInfo.id), providerInfo));
-  options.append(addMenuItem("手动添加", () => createAccount(providerInfo.id), providerInfo));
+  options.append(addMenuItem("导入添加", () => importProviderAuthJSON(providerInfo.id), providerInfo));
   menu.append(options);
   actions.append(menu);
   return actions;
@@ -365,15 +342,6 @@ function accountCard(account, providerInfo) {
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   header.append(main);
-  if (!account.isActive) {
-    const importButton = accountActionButton("导入", () => importAccountAuthJSON(account), isRefreshing);
-    importButton.className = "account-import-button";
-    importButton.textContent = "";
-    importButton.title = "导入 auth.json";
-    importButton.setAttribute("aria-label", "导入 auth.json");
-    importButton.append(importIcon());
-    header.append(importButton);
-  }
   card.append(header);
 
   card.append(usageBlock(account.usage));
@@ -522,25 +490,6 @@ function accountActionButton(label, handler, accountRefreshing) {
   return button;
 }
 
-function importIcon() {
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-
-  const paths = [
-    "M12 15V4",
-    "m7 9 5-5 5 5",
-    "M5 16v3.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V16",
-  ];
-  for (const pathData of paths) {
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", pathData);
-    svg.append(path);
-  }
-  return svg;
-}
-
 function pill(text, title) {
   const item = document.createElement("span");
   item.className = "pill";
@@ -646,10 +595,6 @@ function isAccountRefreshing(account) {
 
 function accountKey(account) {
   return `${account.providerId}:${account.accountId}`;
-}
-
-function isValidEmail(value) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function isValidDateInput(value) {

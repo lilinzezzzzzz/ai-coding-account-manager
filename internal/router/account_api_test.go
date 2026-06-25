@@ -138,24 +138,57 @@ func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 	}
 }
 
-func TestAccountAPIImportAccountAuthJSON(t *testing.T) {
+func TestAccountAPIImportAccountAuthJSONAndRefreshCreatesAccount(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
 
-	bodyBytes, err := json.Marshal(map[string]string{
-		"authJson": `{"tokens":{"access_token":"secret","refresh_token":"refresh"}}`,
-	})
+	authJSON := `{"email":"imported@example.com","planType":"team","tokens":{"access_token":"secret","refresh_token":"refresh"}}`
+	bodyBytes, err := json.Marshal(map[string]string{"authJson": authJSON})
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
 	}
-	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/auth-json/import", string(bodyBytes))
+	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/auth-json/import", string(bodyBytes))
 	if importResponse.Code != http.StatusOK {
 		t.Fatalf("import auth json status = %d, body = %s", importResponse.Code, importResponse.Body.String())
 	}
 	body := importResponse.Body.String()
 	assertBodyDoesNotLeakSensitiveData(t, body)
-	if !strings.Contains(body, `"accountId":"acct-1"`) {
-		t.Fatalf("import auth json body = %s, want acct-1", body)
+	accountID := entity.AccountIDFromEmail("imported@example.com")
+	if !strings.Contains(body, `"accountId":"`+accountID+`"`) ||
+		!strings.Contains(body, `"email":"imported@example.com"`) ||
+		!strings.Contains(body, `"planType":"team"`) ||
+		!strings.Contains(body, `"status":"ready"`) {
+		t.Fatalf("import auth json body = %s, want imported account with usage", body)
+	}
+
+	listResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if !strings.Contains(listResponse.Body.String(), `"email":"imported@example.com"`) {
+		t.Fatalf("list body = %s, want imported account", listResponse.Body.String())
+	}
+}
+
+func TestAccountAPIImportAccountAuthJSONAndRefreshFailureDoesNotCreateAccount(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+
+	authJSON := `{"email":"failed@example.com","refreshErrorCode":"UNAVAILABLE","tokens":{"access_token":"secret"}}`
+	bodyBytes, err := json.Marshal(map[string]string{"authJson": authJSON})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	importResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/auth-json/import", string(bodyBytes))
+	if importResponse.Code != http.StatusOK {
+		t.Fatalf("import auth json status = %d, body = %s", importResponse.Code, importResponse.Body.String())
+	}
+	body := importResponse.Body.String()
+	assertBodyDoesNotLeakSensitiveData(t, body)
+	if !strings.Contains(body, `"code":"UNAVAILABLE"`) {
+		t.Fatalf("import auth json body = %s, want unavailable", body)
+	}
+
+	listResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if strings.Contains(listResponse.Body.String(), `"email":"failed@example.com"`) {
+		t.Fatalf("list body = %s, want failed import not persisted", listResponse.Body.String())
 	}
 }
 
@@ -167,7 +200,7 @@ func TestAccountAPIImportAccountAuthJSONRejectsInvalidJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal request: %v", err)
 	}
-	response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/auth-json/import", string(bodyBytes))
+	response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/auth-json/import", string(bodyBytes))
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", response.Code)
 	}
@@ -228,6 +261,7 @@ func TestAccountAPIRemovedRoutesReturnNotFound(t *testing.T) {
 		authenticatedRequest(t, handler, http.MethodDelete, "/api/login-tasks/fake-login-1", ""),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/usage/refresh", `{}`),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rename", `{"label":"Primary"}`),
+		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/auth-json/import", `{"authJson":"{}"}`),
 		authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/usage/refresh", `{}`),
 	} {
 		body := response.Body.String()

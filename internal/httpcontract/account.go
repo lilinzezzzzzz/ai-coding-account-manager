@@ -76,7 +76,7 @@ func (request CreateAccountRequest) NormalizedEmail() (string, error) {
 	return email, nil
 }
 
-// ImportAccountAuthJSONRequest 是为已有账号导入 auth.json 的 HTTP request。
+// ImportAccountAuthJSONRequest 是导入 auth.json 的 HTTP request。
 type ImportAccountAuthJSONRequest struct {
 	AuthJSON string `json:"authJson"`
 }

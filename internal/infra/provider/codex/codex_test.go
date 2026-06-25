@@ -152,22 +152,50 @@ func TestProviderImportsCurrentAccountAuth(t *testing.T) {
 	}
 }
 
-func TestProviderImportsAccountAuthJSON(t *testing.T) {
+func TestProviderImportsAuthJSONAndRefreshesAccount(t *testing.T) {
 	tempDir := t.TempDir()
 	store := newTestStore(t, tempDir, filepath.Join(tempDir, "active"))
-	codexProvider := newTestProvider(t, store, nil)
-	accountID := entity.AccountIDFromEmail("raw@example.com")
-	account := entity.Account{
-		ProviderID: providerID,
-		AccountID:  accountID,
-		StorageID:  entity.StorageIDForAccount(providerID, accountID),
-		Label:      "raw@example.com",
+	authJSON := []byte(`{"tokens":{"access_token":"raw-secret"}}`)
+	fakeClient := &fakeCodexClient{responses: map[string]any{
+		"account/read": accountReadResponse{
+			Account: &codexAccount{Type: "chatgpt", Email: "raw@example.com"},
+		},
+		"account/rateLimits/read": rateLimitsReadResponse{
+			RateLimits: rateLimitSnapshot{
+				Primary: &rateLimitWindow{
+					UsedPercent: floatPtr(12.5),
+					ResetsAt:    int64Ptr(1700000000000),
+				},
+				PlanType: stringPtr("team"),
+			},
+		},
+	}}
+	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+		content, err := os.ReadFile(filepath.Join(cfg.CodexHome, "auth.json"))
+		if err != nil {
+			t.Fatalf("read runtime auth: %v", err)
+		}
+		if string(content) != string(authJSON) {
+			t.Fatalf("runtime auth content = %s, want %s", content, authJSON)
+		}
+		return fakeClient, nil
+	})
+
+	account, snapshot, err := codexProvider.ImportAccountAuthJSONAndRefresh(context.Background(), authJSON)
+	if err != nil {
+		t.Fatalf("import auth json and refresh: %v", err)
+	}
+	fakeClient.assertAccountReadRefreshToken(t, false)
+	if account.AccountID != entity.AccountIDFromEmail("raw@example.com") {
+		t.Fatalf("account id = %s, want email-derived id", account.AccountID)
+	}
+	if account.PlanType == nil || *account.PlanType != "team" {
+		t.Fatalf("plan type = %v, want team", account.PlanType)
+	}
+	if snapshot.UsedPercent == nil || *snapshot.UsedPercent != 12.5 {
+		t.Fatalf("used percent = %v, want 12.5", snapshot.UsedPercent)
 	}
 
-	authJSON := []byte(`{"tokens":{"access_token":"raw-secret"}}`)
-	if err := codexProvider.ImportAccountAuthJSON(context.Background(), account, authJSON); err != nil {
-		t.Fatalf("import account auth json: %v", err)
-	}
 	accountDir, err := store.AccountCodexDir(providerID, account.StorageID)
 	if err != nil {
 		t.Fatalf("account dir: %v", err)

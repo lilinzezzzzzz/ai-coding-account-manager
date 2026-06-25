@@ -137,13 +137,13 @@ Compose 同样只支持单副本运行；不要对当前服务执行多副本扩
 
 登录添加不会替换当前活动 `CODEX_HOME/auth.json`；只有点击“激活”才会切换活动账号。
 
-### 手动录入和导入
+### 导入 auth.json
 
-“手动录入”只创建本地账号元数据，不会生成真实 Codex 凭据。真实使用前仍需要通过登录
-添加或导入 `auth.json` 补齐凭据。
+管理页面的“添加 -> 导入 auth.json”会先在临时 Codex 运行目录中识别账号并刷新 usage，
+成功后才写入账号数据库记录、最近 usage snapshot 和账号隔离凭据目录。
 
-账号卡片里的“导入 auth.json”会解析 JSON 并校验账号归属，避免把不匹配的凭据写到
-当前账号下。不要把 `auth.json` 内容提交到 Git、日志、issue 或聊天记录。
+如果账号识别或刷新失败，本次导入不会创建新的账号记录。不要把 `auth.json` 内容提交到
+Git、日志、issue 或聊天记录。
 
 ### 刷新和激活
 
@@ -205,7 +205,7 @@ GET    /api/health
 GET    /api/providers
 GET    /api/accounts
 POST   /api/providers/{providerId}/accounts/create
-POST   /api/providers/{providerId}/accounts/{accountId}/auth-json/import
+POST   /api/providers/{providerId}/accounts/auth-json/import
 POST   /api/providers/{providerId}/accounts/{accountId}/activate
 POST   /api/providers/{providerId}/accounts/{accountId}/refresh
 DELETE /api/providers/{providerId}/accounts/{accountId}

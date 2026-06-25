@@ -60,9 +60,9 @@ func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http
 	return nil
 }
 
-// ImportAccountAuthJSON 为已有账号导入 auth.json。
-func (controller AccountController) ImportAccountAuthJSON(w http.ResponseWriter, r *http.Request) error {
-	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
+// ImportAccountAuthJSONAndRefresh 导入 auth.json，自动识别账号并刷新状态。
+func (controller AccountController) ImportAccountAuthJSONAndRefresh(w http.ResponseWriter, r *http.Request) error {
+	providerID, err := httpcontract.ProviderID(r)
 	if err != nil {
 		return err
 	}
@@ -74,12 +74,12 @@ func (controller AccountController) ImportAccountAuthJSON(w http.ResponseWriter,
 	if err != nil {
 		return err
 	}
-	account, err := controller.accounts.ImportAccountAuthJSON(r.Context(), providerID, accountID, authJSON)
+	account, err := controller.accounts.ImportAccountAuthJSONAndRefresh(r.Context(), providerID, authJSON)
 	if err != nil {
 		return err
 	}
-	slog.Info("account auth imported", "provider_id", account.ProviderID, "account_id", account.AccountID)
-	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
+	slog.Info("account auth imported and refreshed", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
+	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
 	return nil
 }
 

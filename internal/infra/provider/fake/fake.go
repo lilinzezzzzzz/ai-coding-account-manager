@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -189,24 +190,63 @@ func (fakeProvider *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 	return &refreshedAccount, usage, nil
 }
 
-// ImportAccountAuthJSON 校验并保存 fake 账号的 auth.json 内容。
-func (fakeProvider *Provider) ImportAccountAuthJSON(_ context.Context, account entity.Account, authJSON []byte) error {
+// ImportAccountAuthJSONAndRefresh 通过 fake auth.json 识别账号并返回 usage。
+func (fakeProvider *Provider) ImportAccountAuthJSONAndRefresh(_ context.Context, authJSON []byte) (*entity.Account, *entity.UsageSnapshot, error) {
 	fakeProvider.mu.Lock()
 	defer fakeProvider.mu.Unlock()
 
 	if err := fakeProvider.ensureAvailableLocked(); err != nil {
-		return err
+		return nil, nil, err
 	}
-	key := accountKey(account.ProviderID, account.AccountID)
+	if !fakeProvider.description.Capabilities.CanRefreshUsage {
+		return nil, nil, provider.Unsupported()
+	}
 	var value map[string]any
 	if err := json.Unmarshal(authJSON, &value); err != nil || len(value) == 0 {
-		return entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 无效")
+		return nil, nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 无效")
 	}
-	if _, ok := fakeProvider.accounts[key]; !ok {
-		fakeProvider.accounts[key] = account
+	if errorCode := stringField(value, "refreshErrorCode"); errorCode != "" {
+		return nil, nil, entity.NewAppError(entity.ErrorCode(errorCode))
 	}
+
+	email := stringField(value, "email")
+	accountID := stringField(value, "accountId")
+	if accountID == "" && email != "" {
+		accountID = entity.AccountIDFromEmail(email)
+	}
+	if accountID == "" {
+		return nil, nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "auth.json 缺少账号信息")
+	}
+
+	account := entity.Account{
+		ProviderID: fakeProvider.description.ID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(fakeProvider.description.ID, accountID),
+		Label:      accountID,
+	}
+	if email != "" {
+		account.Label = email
+		account.Email = &email
+	}
+	if planType := stringField(value, "planType"); planType != "" {
+		account.PlanType = &planType
+	}
+
+	key := accountKey(account.ProviderID, account.AccountID)
+	fakeProvider.accounts[key] = account
 	fakeProvider.authJSONs[key] = string(authJSON)
-	return nil
+
+	usage := entity.UsageSnapshot{
+		ProviderID:  account.ProviderID,
+		AccountID:   account.AccountID,
+		Status:      entity.UsageStatusReady,
+		RefreshedAt: time.Now().UTC().UnixMilli(),
+	}
+	if usageStatus := stringField(value, "usageStatus"); usageStatus != "" {
+		usage.Status = entity.UsageStatus(usageStatus)
+	}
+	fakeProvider.usages[key] = usage
+	return &account, &usage, nil
 }
 
 // ActivateAccount 校验目标账号可被激活。
@@ -265,4 +305,12 @@ func (fakeProvider *Provider) ensureAvailableLocked() error {
 
 func accountKey(providerID string, accountID string) string {
 	return providerID + "\x00" + accountID
+}
+
+func stringField(value map[string]any, key string) string {
+	raw, ok := value[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(raw)
 }

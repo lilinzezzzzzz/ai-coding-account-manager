@@ -81,22 +81,18 @@ func (store *Store) ImportFromCodexDir(ctx context.Context, providerID string, s
 	return copyAuthAtomic(sourceAuth, filepath.Join(accountDir, authFileName))
 }
 
-// ImportAuthJSON 把前端提交的 auth.json 内容写入账号隔离目录。
-func (store *Store) ImportAuthJSON(ctx context.Context, providerID string, storageID string, authJSON []byte) error {
+// ImportAuthJSONToCodexDir 把 auth.json 内容写入指定 CODEX_HOME。
+func (store *Store) ImportAuthJSONToCodexDir(ctx context.Context, codexDir string, authJSON []byte) error {
 	if err := ctx.Err(); err != nil {
-		return err
-	}
-	accountDir, err := store.AccountCodexDir(providerID, storageID)
-	if err != nil {
 		return err
 	}
 	if err := validateAuthPayload(authJSON); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(accountDir, 0o700); err != nil {
-		return fmt.Errorf("create account credentials dir: %w", err)
+	if err := os.MkdirAll(codexDir, 0o700); err != nil {
+		return fmt.Errorf("create codex dir: %w", err)
 	}
-	return writeAuthAtomic(authJSON, filepath.Join(accountDir, authFileName))
+	return writeAuthAtomic(authJSON, filepath.Join(codexDir, authFileName))
 }
 
 // ValidateAccount 校验账号隔离目录中是否存在可用 auth.json。

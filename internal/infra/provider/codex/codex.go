@@ -118,12 +118,27 @@ func (providerImpl *Provider) ImportAccountAuthFromCodexDir(ctx context.Context,
 	return nil
 }
 
-// ImportAccountAuthJSON 把前端提交的 auth.json 内容导入账号隔离目录。
-func (providerImpl *Provider) ImportAccountAuthJSON(ctx context.Context, account entity.Account, authJSON []byte) error {
-	if err := providerImpl.credentials.ImportAuthJSON(ctx, providerID, account.StorageID, authJSON); err != nil {
-		return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "导入 Codex auth.json 失败", err)
+// ImportAccountAuthJSONAndRefresh 导入 auth.json，识别账号并刷新 usage。
+func (providerImpl *Provider) ImportAccountAuthJSONAndRefresh(ctx context.Context, authJSON []byte) (*entity.Account, *entity.UsageSnapshot, error) {
+	runtimeDir, err := os.MkdirTemp("", "ai-coding-account-manager-codex-home-*")
+	if err != nil {
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "创建 Codex 临时运行目录失败", err)
 	}
-	return nil
+	defer func() {
+		_ = os.RemoveAll(runtimeDir)
+	}()
+	if err := providerImpl.credentials.ImportAuthJSONToCodexDir(ctx, runtimeDir, authJSON); err != nil {
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
+	}
+
+	refreshedAccount, snapshot, err := providerImpl.refreshCodexHome(ctx, runtimeDir, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, refreshedAccount.StorageID, runtimeDir); err != nil {
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
+	}
+	return refreshedAccount, snapshot, nil
 }
 
 // RefreshAccount 使用账号隔离 CODEX_HOME 刷新 usage。
@@ -148,7 +163,18 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
 	}
 
-	client, err := providerImpl.startClient(ctx, runtimeDir)
+	refreshedAccount, snapshot, err := providerImpl.refreshCodexHome(ctx, runtimeDir, account.AccountID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
+		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
+	}
+	return refreshedAccount, snapshot, nil
+}
+
+func (providerImpl *Provider) refreshCodexHome(ctx context.Context, codexHome string, expectedAccountID string) (*entity.Account, *entity.UsageSnapshot, error) {
+	client, err := providerImpl.startClient(ctx, codexHome)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -158,7 +184,7 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 		_ = client.Close(context.Background())
 		return nil, nil, err
 	}
-	if refreshedAccount.AccountID != account.AccountID {
+	if expectedAccountID != "" && refreshedAccount.AccountID != expectedAccountID {
 		_ = client.Close(context.Background())
 		return nil, nil, entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应账号与当前账号不一致")
 	}
@@ -177,10 +203,7 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 	if err := client.Close(context.Background()); err != nil {
 		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
 	}
-	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
-		return nil, nil, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
-	}
-	snapshot, err := mapUsageSnapshot(account, response, providerImpl.now().UTC().UnixMilli())
+	snapshot, err := mapUsageSnapshot(*refreshedAccount, response, providerImpl.now().UTC().UnixMilli())
 	if err != nil {
 		return nil, nil, err
 	}

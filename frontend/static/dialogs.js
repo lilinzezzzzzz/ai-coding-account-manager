@@ -1,4 +1,4 @@
-export function promptAuthJSON(account) {
+export function promptAuthJSON(options = {}) {
   const textarea = document.createElement("textarea");
   textarea.name = "authJson";
   textarea.rows = 14;
@@ -8,7 +8,7 @@ export function promptAuthJSON(account) {
   return new Promise((resolve) => {
     openFormDialog({
       title: "导入 auth.json",
-      detail: account.label || account.email || account.accountId,
+      detail: options.detail || "",
       body: textarea,
       submitText: "导入",
       initialFocus: textarea,

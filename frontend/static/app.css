@@ -309,48 +309,6 @@ h1 {
   min-width: 0;
 }
 
-.account-import-button {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 32px;
-  min-width: 32px;
-  height: 32px;
-  min-height: 32px;
-  border-color: #cdd7e2;
-  background: #f8fafc;
-  color: #2c3a4d;
-  padding: 0;
-}
-
-.account-import-button:hover {
-  border-color: #8fa1b7;
-  background: #eef2f6;
-  color: #18212f;
-}
-
-.account-import-button:focus-visible {
-  border-color: #70a8d8;
-  outline: 2px solid rgba(112, 168, 216, 0.28);
-  outline-offset: 2px;
-}
-
-.account-import-button:disabled {
-  border-color: #c8d1dc;
-  background: #eef2f6;
-  color: #8c98a8;
-}
-
-.account-import-button svg {
-  width: 18px;
-  height: 18px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
 .account-name {
   display: flex;
   align-items: center;
