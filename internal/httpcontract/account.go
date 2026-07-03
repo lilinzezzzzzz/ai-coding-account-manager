@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/service"
 )
 
@@ -28,12 +29,18 @@ type AccountResponse struct {
 
 // UsageSnapshotResponse 是 usage snapshot 的 HTTP response。
 type UsageSnapshotResponse struct {
-	Status       entity.UsageStatus `json:"status"`
-	UsedPercent  *float64           `json:"usedPercent"`
-	ResetsAt     *int64             `json:"resetsAt"`
-	SnapshotJSON *string            `json:"snapshotJson"`
-	ErrorCode    *entity.ErrorCode  `json:"errorCode"`
-	RefreshedAt  int64              `json:"refreshedAt"`
+	Status                entity.UsageStatus             `json:"status"`
+	UsedPercent           *float64                       `json:"usedPercent"`
+	ResetsAt              *int64                         `json:"resetsAt"`
+	RateLimitResetCredits *RateLimitResetCreditsResponse `json:"rateLimitResetCredits"`
+	SnapshotJSON          *string                        `json:"snapshotJson"`
+	ErrorCode             *entity.ErrorCode              `json:"errorCode"`
+	RefreshedAt           int64                          `json:"refreshedAt"`
+}
+
+// RateLimitResetCreditsResponse 是 Codex rate limit reset credits 摘要。
+type RateLimitResetCreditsResponse struct {
+	AvailableCount int64 `json:"availableCount"`
 }
 
 // UpdatePlanExpirationRequest 是更新人工维护套餐到期时间的 HTTP request。
@@ -100,6 +107,26 @@ func (request ImportAccountAuthJSONRequest) NormalizedAuthJSON() ([]byte, error)
 	return []byte(authJSON), nil
 }
 
+// ResetRateLimitRequest 是消费 rate limit reset credit 的 HTTP request。
+type ResetRateLimitRequest struct {
+	IdempotencyKey string `json:"idempotencyKey"`
+}
+
+// NormalizedIdempotencyKey 返回已校验的幂等键。
+func (request ResetRateLimitRequest) NormalizedIdempotencyKey() (string, error) {
+	idempotencyKey := strings.TrimSpace(request.IdempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 128 {
+		return "", entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "idempotencyKey 无效")
+	}
+	return idempotencyKey, nil
+}
+
+// ResetRateLimitResponse 是账号额度重置结果的 HTTP response。
+type ResetRateLimitResponse struct {
+	Outcome provider.RateLimitResetOutcome `json:"outcome"`
+	Account AccountResponse                `json:"account"`
+}
+
 // RefreshResultResponse 是单账号状态刷新结果的 HTTP response。
 type RefreshResultResponse struct {
 	ProviderID   string            `json:"providerId"`
@@ -139,12 +166,34 @@ func AccountEntityResponse(account entity.Account, usage *entity.UsageSnapshot) 
 // UsageSnapshotHTTPResponse 将 usage snapshot 转换为 HTTP response。
 func UsageSnapshotHTTPResponse(usage entity.UsageSnapshot) UsageSnapshotResponse {
 	return UsageSnapshotResponse{
-		Status:       usage.Status,
-		UsedPercent:  usage.UsedPercent,
-		ResetsAt:     usage.ResetsAt,
-		SnapshotJSON: usage.SnapshotJSON,
-		ErrorCode:    usage.ErrorCode,
-		RefreshedAt:  usage.RefreshedAt,
+		Status:                usage.Status,
+		UsedPercent:           usage.UsedPercent,
+		ResetsAt:              usage.ResetsAt,
+		RateLimitResetCredits: rateLimitResetCreditsResponse(usage.SnapshotJSON),
+		SnapshotJSON:          usage.SnapshotJSON,
+		ErrorCode:             usage.ErrorCode,
+		RefreshedAt:           usage.RefreshedAt,
+	}
+}
+
+func rateLimitResetCreditsResponse(snapshotJSON *string) *RateLimitResetCreditsResponse {
+	if snapshotJSON == nil || strings.TrimSpace(*snapshotJSON) == "" {
+		return nil
+	}
+	var snapshot struct {
+		RateLimitResetCredits *RateLimitResetCreditsResponse `json:"rateLimitResetCredits"`
+	}
+	if err := json.Unmarshal([]byte(*snapshotJSON), &snapshot); err != nil {
+		return nil
+	}
+	return snapshot.RateLimitResetCredits
+}
+
+// ResetRateLimitHTTPResponse 将 service 重置结果转换为 HTTP response。
+func ResetRateLimitHTTPResponse(result service.ResetRateLimitResult) ResetRateLimitResponse {
+	return ResetRateLimitResponse{
+		Outcome: result.Outcome,
+		Account: AccountViewResponse(result.Account),
 	}
 }
 

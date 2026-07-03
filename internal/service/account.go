@@ -46,6 +46,17 @@ type AccountMetadataUsageRefresher interface {
 	RefreshAccountWithMetadata(context.Context, entity.Account) (*entity.Account, *entity.UsageSnapshot, error)
 }
 
+// AccountRateLimitResetter 描述支持消费 reset credit 的 provider 可选能力。
+type AccountRateLimitResetter interface {
+	ResetAccountRateLimit(context.Context, entity.Account, string) (provider.RateLimitResetResult, error)
+}
+
+// ResetRateLimitResult 表示账号额度重置结果和最新账号视图。
+type ResetRateLimitResult struct {
+	Outcome provider.RateLimitResetOutcome
+	Account AccountWithUsage
+}
+
 // AccountService 编排账号生命周期、DAO 事务和 provider 调用。
 type AccountService struct {
 	uow       dao.UnitOfWork
@@ -264,6 +275,49 @@ func (service *AccountService) RefreshAccount(ctx context.Context, providerID st
 		return RefreshResult{}, err
 	}
 	return service.refreshOne(ctx, account), nil
+}
+
+// ResetAccountRateLimit 消耗一次 reset credit，并持久化重置后的 usage。
+func (service *AccountService) ResetAccountRateLimit(ctx context.Context, providerID string, accountID string, idempotencyKey string) (ResetRateLimitResult, error) {
+	idempotencyKey = strings.TrimSpace(idempotencyKey)
+	if idempotencyKey == "" || len(idempotencyKey) > 128 {
+		return ResetRateLimitResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "idempotencyKey 无效")
+	}
+	registeredProvider, err := service.getProvider(providerID)
+	if err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	resetter, ok := registeredProvider.(AccountRateLimitResetter)
+	if !ok {
+		return ResetRateLimitResult{}, entity.NewAppError(entity.ErrorCodeUnsupported)
+	}
+	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
+	if err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	providerResult, err := resetter.ResetAccountRateLimit(ctx, account, idempotencyKey)
+	if err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	if err := validateRefreshedAccount(account, providerResult.Account); err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	if providerResult.Usage == nil {
+		return ResetRateLimitResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "额度重置后未返回最新 usage")
+	}
+	normalizedSnapshot := normalizeUsageSnapshot(account, *providerResult.Usage)
+	now := service.now().UTC().UnixMilli()
+	refreshedAccount := mergeRefreshedAccount(account, providerResult.Account, now)
+	if err := service.persistRefreshSuccess(ctx, account, providerResult.Account, normalizedSnapshot, now); err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	return ResetRateLimitResult{
+		Outcome: providerResult.Outcome,
+		Account: AccountWithUsage{
+			Account: refreshedAccount,
+			Usage:   &normalizedSnapshot,
+		},
+	}, nil
 }
 
 func (service *AccountService) refreshOne(ctx context.Context, account entity.Account) RefreshResult {

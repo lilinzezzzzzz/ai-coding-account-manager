@@ -432,6 +432,42 @@ h1 {
   text-align: left;
 }
 
+.usage-reset-button {
+  flex: 0 0 auto;
+  min-width: 36px;
+  min-height: 32px;
+  border: 1px solid #9bb4cc;
+  border-radius: 6px;
+  background: #f7fafc;
+  color: #244663;
+  font-size: 20px;
+  font-weight: 650;
+  line-height: 1;
+  padding: 6px 10px;
+}
+
+.usage-reset-button:hover:not(:disabled) {
+  border-color: #6f94b5;
+  background: #edf4f9;
+}
+
+.usage-reset-button.is-resetting .usage-reset-icon {
+  display: inline-block;
+  animation: reset-button-spin 800ms linear infinite;
+}
+
+@keyframes reset-button-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .usage-reset-button.is-resetting .usage-reset-icon {
+    animation: none;
+  }
+}
+
 .danger {
   color: #a6342b;
 }
@@ -475,6 +511,12 @@ h1 {
   line-height: 1.5;
   white-space: pre-line;
   overflow-wrap: anywhere;
+}
+
+.dialog-reset-count {
+  color: #24704d;
+  font-size: 16px;
+  font-weight: 800;
 }
 
 .dialog-error {

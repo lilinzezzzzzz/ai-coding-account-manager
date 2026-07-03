@@ -38,6 +38,7 @@ type Provider struct {
 	accounts      map[string]entity.Account
 	usages        map[string]entity.UsageSnapshot
 	authJSONs     map[string]string
+	resetKeys     map[string]map[string]struct{}
 	closed        bool
 }
 
@@ -68,6 +69,7 @@ func New(cfg Config) *Provider {
 		accounts:      map[string]entity.Account{},
 		usages:        map[string]entity.UsageSnapshot{},
 		authJSONs:     map[string]string{},
+		resetKeys:     map[string]map[string]struct{}{},
 	}
 	for _, state := range cfg.Accounts {
 		account := state.Account
@@ -267,6 +269,65 @@ func (fakeProvider *Provider) ActivateAccount(_ context.Context, account entity.
 	return nil
 }
 
+// ResetAccountRateLimit 模拟消费一次 reset credit，并更新 usage snapshot。
+func (fakeProvider *Provider) ResetAccountRateLimit(_ context.Context, account entity.Account, idempotencyKey string) (provider.RateLimitResetResult, error) {
+	fakeProvider.mu.Lock()
+	defer fakeProvider.mu.Unlock()
+
+	if err := fakeProvider.ensureAvailableLocked(); err != nil {
+		return provider.RateLimitResetResult{}, err
+	}
+	key := accountKey(account.ProviderID, account.AccountID)
+	storedAccount, ok := fakeProvider.accounts[key]
+	if !ok {
+		return provider.RateLimitResetResult{}, entity.NewAppError(entity.ErrorCodeNotFound)
+	}
+	usage, ok := fakeProvider.usages[key]
+	if !ok || usage.SnapshotJSON == nil {
+		return provider.RateLimitResetResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "fake usage snapshot 不可用")
+	}
+	if _, redeemed := fakeProvider.resetKeys[key][idempotencyKey]; redeemed {
+		return provider.RateLimitResetResult{
+			Outcome: provider.RateLimitResetOutcomeAlreadyRedeemed,
+			Account: &storedAccount,
+			Usage:   &usage,
+		}, nil
+	}
+
+	var snapshot fakeRateLimitSnapshot
+	if err := json.Unmarshal([]byte(*usage.SnapshotJSON), &snapshot); err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "解析 fake usage snapshot 失败", err)
+	}
+	outcome := provider.RateLimitResetOutcomeNothingToReset
+	if snapshot.RateLimitResetCredits == nil || snapshot.RateLimitResetCredits.AvailableCount <= 0 {
+		outcome = provider.RateLimitResetOutcomeNoCredit
+	} else if resetFakeRateLimitWindows(&snapshot.RateLimits) {
+		snapshot.RateLimitResetCredits.AvailableCount--
+		outcome = provider.RateLimitResetOutcomeReset
+		if fakeProvider.resetKeys[key] == nil {
+			fakeProvider.resetKeys[key] = map[string]struct{}{}
+		}
+		fakeProvider.resetKeys[key][idempotencyKey] = struct{}{}
+	}
+	payload, err := json.Marshal(snapshot)
+	if err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "编码 fake usage snapshot 失败", err)
+	}
+	snapshotJSON := string(payload)
+	usage.SnapshotJSON = &snapshotJSON
+	usage.Status = entity.UsageStatusReady
+	usage.RefreshedAt = time.Now().UTC().UnixMilli()
+	if snapshot.RateLimits.Primary != nil {
+		usage.UsedPercent = snapshot.RateLimits.Primary.UsedPercent
+	}
+	fakeProvider.usages[key] = usage
+	return provider.RateLimitResetResult{
+		Outcome: outcome,
+		Account: &storedAccount,
+		Usage:   &usage,
+	}, nil
+}
+
 // RemoveAccountData 删除 fake 账号数据。
 func (fakeProvider *Provider) RemoveAccountData(_ context.Context, account entity.Account) error {
 	fakeProvider.mu.Lock()
@@ -313,4 +374,42 @@ func stringField(value map[string]any, key string) string {
 		return ""
 	}
 	return strings.TrimSpace(raw)
+}
+
+type fakeRateLimitSnapshot struct {
+	RateLimitResetCredits *fakeRateLimitResetCredits `json:"rateLimitResetCredits"`
+	RateLimits            fakeRateLimits             `json:"rateLimits"`
+}
+
+type fakeRateLimitResetCredits struct {
+	AvailableCount int64 `json:"availableCount"`
+}
+
+type fakeRateLimits struct {
+	Primary              *fakeRateLimitWindow `json:"primary"`
+	Secondary            *fakeRateLimitWindow `json:"secondary"`
+	PlanType             *string              `json:"planType"`
+	RateLimitReachedType *string              `json:"rateLimitReachedType"`
+}
+
+type fakeRateLimitWindow struct {
+	UsedPercent        *float64 `json:"usedPercent"`
+	ResetsAt           *int64   `json:"resetsAt"`
+	WindowDurationMins *int64   `json:"windowDurationMins"`
+}
+
+func resetFakeRateLimitWindows(rateLimits *fakeRateLimits) bool {
+	reset := false
+	for _, window := range []*fakeRateLimitWindow{rateLimits.Primary, rateLimits.Secondary} {
+		if window == nil || window.UsedPercent == nil || *window.UsedPercent <= 0 {
+			continue
+		}
+		zero := 0.0
+		window.UsedPercent = &zero
+		reset = true
+	}
+	if reset {
+		rateLimits.RateLimitReachedType = nil
+	}
+	return reset
 }

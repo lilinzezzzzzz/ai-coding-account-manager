@@ -49,7 +49,11 @@ export function promptTextDialog(options) {
 export function confirmDialog(options) {
   const detail = document.createElement("p");
   detail.className = "dialog-detail";
-  detail.textContent = options.detail || "";
+  if (options.detailContent) {
+    detail.append(options.detailContent);
+  } else {
+    detail.textContent = options.detail || "";
+  }
   return new Promise((resolve) => {
     openFormDialog({
       title: options.title,

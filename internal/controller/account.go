@@ -185,3 +185,31 @@ func (controller AccountController) RefreshAccount(w http.ResponseWriter, r *htt
 	httptransport.WriteOK(w, httpcontract.RefreshResultHTTPResponse(result))
 	return nil
 }
+
+// ResetAccountRateLimit 消耗一次 reset credit 并返回最新账号状态。
+func (controller AccountController) ResetAccountRateLimit(w http.ResponseWriter, r *http.Request) error {
+	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
+	if err != nil {
+		return err
+	}
+	var request httpcontract.ResetRateLimitRequest
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	idempotencyKey, err := request.NormalizedIdempotencyKey()
+	if err != nil {
+		return err
+	}
+	result, err := controller.accounts.ResetAccountRateLimit(r.Context(), providerID, accountID, idempotencyKey)
+	if err != nil {
+		return err
+	}
+	slog.Info(
+		"account rate limit reset attempted",
+		"provider_id", providerID,
+		"account_id", accountID,
+		"outcome", result.Outcome,
+	)
+	httptransport.WriteOK(w, httpcontract.ResetRateLimitHTTPResponse(result))
+	return nil
+}

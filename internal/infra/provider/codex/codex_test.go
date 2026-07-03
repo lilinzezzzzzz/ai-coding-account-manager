@@ -11,6 +11,7 @@ import (
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/appserver"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/credentials"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 )
 
 func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
@@ -34,6 +35,7 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 			Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
 		},
 		"account/rateLimits/read": rateLimitsReadResponse{
+			RateLimitResetCredits: &rateLimitResetCreditsSummary{AvailableCount: 2},
 			RateLimits: rateLimitSnapshot{
 				Primary: &rateLimitWindow{
 					UsedPercent: floatPtr(42.5),
@@ -63,6 +65,13 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	}
 	if snapshot.SnapshotJSON == nil || *snapshot.SnapshotJSON == "" {
 		t.Fatal("snapshot json is empty")
+	}
+	var snapshotPayload rateLimitsReadResponse
+	if err := json.Unmarshal([]byte(*snapshot.SnapshotJSON), &snapshotPayload); err != nil {
+		t.Fatalf("unmarshal snapshot json: %v", err)
+	}
+	if snapshotPayload.RateLimitResetCredits == nil || snapshotPayload.RateLimitResetCredits.AvailableCount != 2 {
+		t.Fatalf("reset credits = %#v, want available count 2", snapshotPayload.RateLimitResetCredits)
 	}
 
 	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"old"}}`)
@@ -109,6 +118,74 @@ func TestProviderRejectsMismatchedAccountAuthOnRefresh(t *testing.T) {
 	appErr, ok := entity.AsAppError(err)
 	if !ok || appErr.ErrorCode() != entity.ErrorCodeConflict {
 		t.Fatalf("error = %v, want CONFLICT", err)
+	}
+}
+
+func TestProviderResetsAccountRateLimitAndReturnsLatestUsage(t *testing.T) {
+	tempDir := t.TempDir()
+	activeDir := filepath.Join(tempDir, "active")
+	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"active"}}`)
+	store := newTestStore(t, tempDir, activeDir)
+	accountID := entity.AccountIDFromEmail("user@example.com")
+	account := entity.Account{
+		ProviderID: providerID,
+		AccountID:  accountID,
+		StorageID:  entity.StorageIDForAccount(providerID, accountID),
+		Label:      "user@example.com",
+	}
+	if err := store.ImportFromCodexDir(context.Background(), providerID, account.StorageID, activeDir); err != nil {
+		t.Fatalf("import account credentials: %v", err)
+	}
+
+	fakeClient := &fakeCodexClient{responses: map[string]any{
+		"account/read": accountReadResponse{
+			Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
+		},
+		"account/rateLimitResetCredit/consume": consumeRateLimitResetCreditResponse{
+			Outcome: provider.RateLimitResetOutcomeReset,
+		},
+		"account/rateLimits/read": rateLimitsReadResponse{
+			RateLimitResetCredits: &rateLimitResetCreditsSummary{AvailableCount: 1},
+			RateLimits: rateLimitSnapshot{
+				Primary: &rateLimitWindow{UsedPercent: floatPtr(0)},
+			},
+		},
+	}}
+	codexProvider := newTestProvider(t, store, func(context.Context, appserver.Config) (appServerClient, error) {
+		return fakeClient, nil
+	})
+
+	result, err := codexProvider.ResetAccountRateLimit(context.Background(), account, "reset-attempt-1")
+	if err != nil {
+		t.Fatalf("reset account rate limit: %v", err)
+	}
+	if result.Outcome != provider.RateLimitResetOutcomeReset {
+		t.Fatalf("outcome = %q, want reset", result.Outcome)
+	}
+	if result.Usage == nil || result.Usage.SnapshotJSON == nil {
+		t.Fatal("reset result usage is empty")
+	}
+	var snapshot rateLimitsReadResponse
+	if err := json.Unmarshal([]byte(*result.Usage.SnapshotJSON), &snapshot); err != nil {
+		t.Fatalf("unmarshal reset snapshot: %v", err)
+	}
+	if snapshot.RateLimitResetCredits == nil || snapshot.RateLimitResetCredits.AvailableCount != 1 {
+		t.Fatalf("reset credits = %#v, want available count 1", snapshot.RateLimitResetCredits)
+	}
+
+	foundConsume := false
+	for _, call := range fakeClient.calls {
+		if call.method != "account/rateLimitResetCredit/consume" {
+			continue
+		}
+		foundConsume = true
+		params, ok := call.params.(consumeRateLimitResetCreditParams)
+		if !ok || params.IdempotencyKey != "reset-attempt-1" {
+			t.Fatalf("consume params = %#v, want idempotency key", call.params)
+		}
+	}
+	if !foundConsume {
+		t.Fatal("consume method was not called")
 	}
 }
 

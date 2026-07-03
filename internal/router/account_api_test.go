@@ -47,6 +47,24 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	if !strings.Contains(listResponse.Body.String(), `"accountId":"acct-1"`) || !strings.Contains(listResponse.Body.String(), `"usage"`) {
 		t.Fatalf("list body = %s, want seeded account with usage", listResponse.Body.String())
 	}
+	if !strings.Contains(listResponse.Body.String(), `"rateLimitResetCredits":{"availableCount":3}`) {
+		t.Fatalf("list body = %s, want reset credits", listResponse.Body.String())
+	}
+
+	resetResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rate-limit/reset", `{"idempotencyKey":"reset-attempt-1"}`)
+	if resetResponse.Code != http.StatusOK {
+		t.Fatalf("reset status = %d, body = %s", resetResponse.Code, resetResponse.Body.String())
+	}
+	if !strings.Contains(resetResponse.Body.String(), `"outcome":"reset"`) ||
+		!strings.Contains(resetResponse.Body.String(), `"rateLimitResetCredits":{"availableCount":2}`) ||
+		!strings.Contains(resetResponse.Body.String(), `"usedPercent":0`) {
+		t.Fatalf("reset body = %s, want reset outcome and refreshed usage", resetResponse.Body.String())
+	}
+	retryResetResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-1/rate-limit/reset", `{"idempotencyKey":"reset-attempt-1"}`)
+	if !strings.Contains(retryResetResponse.Body.String(), `"outcome":"alreadyRedeemed"`) ||
+		!strings.Contains(retryResetResponse.Body.String(), `"rateLimitResetCredits":{"availableCount":2}`) {
+		t.Fatalf("retry reset body = %s, want idempotent outcome", retryResetResponse.Body.String())
+	}
 
 	deleteActiveResponse := authenticatedRequest(t, handler, http.MethodDelete, "/api/providers/codex/accounts/acct-1", "")
 	if deleteActiveResponse.Code != http.StatusOK {
@@ -377,12 +395,14 @@ func testAPIAccount(accountID string) entity.Account {
 
 func testAPIUsage(accountID string, status entity.UsageStatus) entity.UsageSnapshot {
 	usedPercent := 50.0
+	snapshotJSON := `{"rateLimitResetCredits":{"availableCount":3},"rateLimits":{"primary":{"usedPercent":50,"resetsAt":1700000000000},"secondary":null}}`
 	return entity.UsageSnapshot{
-		ProviderID:  "codex",
-		AccountID:   accountID,
-		Status:      status,
-		UsedPercent: &usedPercent,
-		RefreshedAt: 2000,
+		ProviderID:   "codex",
+		AccountID:    accountID,
+		Status:       status,
+		UsedPercent:  &usedPercent,
+		SnapshotJSON: &snapshotJSON,
+		RefreshedAt:  2000,
 	}
 }
 

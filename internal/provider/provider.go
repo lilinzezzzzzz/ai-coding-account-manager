@@ -42,6 +42,27 @@ type Capabilities struct {
 	RequiresClientReloadAfterActivate bool
 }
 
+// RateLimitResetOutcome 表示 rate limit reset credit 的消费结果。
+type RateLimitResetOutcome string
+
+const (
+	// RateLimitResetOutcomeReset 表示已消费 credit 并完成重置。
+	RateLimitResetOutcomeReset RateLimitResetOutcome = "reset"
+	// RateLimitResetOutcomeNothingToReset 表示当前没有符合条件的额度窗口。
+	RateLimitResetOutcomeNothingToReset RateLimitResetOutcome = "nothingToReset"
+	// RateLimitResetOutcomeNoCredit 表示账号没有可用的 reset credit。
+	RateLimitResetOutcomeNoCredit RateLimitResetOutcome = "noCredit"
+	// RateLimitResetOutcomeAlreadyRedeemed 表示该幂等键已完成过重置。
+	RateLimitResetOutcomeAlreadyRedeemed RateLimitResetOutcome = "alreadyRedeemed"
+)
+
+// RateLimitResetResult 保存重置结果和重置后的账号状态。
+type RateLimitResetResult struct {
+	Outcome RateLimitResetOutcome
+	Account *entity.Account
+	Usage   *entity.UsageSnapshot
+}
+
 // Unsupported 返回能力不支持的稳定错误。
 func Unsupported() error {
 	return entity.NewAppError(entity.ErrorCodeUnsupported)

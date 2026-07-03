@@ -173,6 +173,74 @@ func (providerImpl *Provider) RefreshAccountWithMetadata(ctx context.Context, ac
 	return refreshedAccount, snapshot, nil
 }
 
+// ResetAccountRateLimit 消耗一次 reset credit，并返回重置后的 usage。
+func (providerImpl *Provider) ResetAccountRateLimit(ctx context.Context, account entity.Account, idempotencyKey string) (provider.RateLimitResetResult, error) {
+	if err := providerImpl.credentials.ValidateAccount(ctx, providerID, account.StorageID); err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "账号未导入 Codex auth.json，请先登录添加账号", err)
+	}
+	runtimeDir, err := os.MkdirTemp("", "ai-coding-account-manager-codex-home-*")
+	if err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "创建 Codex 临时运行目录失败", err)
+	}
+	defer func() {
+		_ = os.RemoveAll(runtimeDir)
+	}()
+	if err := providerImpl.credentials.ExportToCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "准备 Codex 临时 auth.json 失败", err)
+	}
+
+	client, err := providerImpl.startClient(ctx, runtimeDir)
+	if err != nil {
+		return provider.RateLimitResetResult{}, err
+	}
+	refreshedAccount, err := providerImpl.readAccount(ctx, client, false)
+	if err != nil {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, err
+	}
+	if refreshedAccount.AccountID != account.AccountID {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应账号与当前账号不一致")
+	}
+
+	var consumeResponse consumeRateLimitResetCreditResponse
+	if err := client.Call(ctx, "account/rateLimitResetCredit/consume", consumeRateLimitResetCreditParams{IdempotencyKey: idempotencyKey}, &consumeResponse); err != nil {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, mapAppServerError("consume Codex rate limit reset credit failed", err)
+	}
+	if !validRateLimitResetOutcome(consumeResponse.Outcome) {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 返回了未知的额度重置结果")
+	}
+
+	var rateLimitsResponse rateLimitsReadResponse
+	if err := client.Call(ctx, "account/rateLimits/read", map[string]any{}, &rateLimitsResponse); err != nil {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, mapAppServerError("read Codex rate limits after reset failed", err)
+	}
+	if rateLimitsResponse.RateLimits.PlanType != nil {
+		planType := strings.TrimSpace(*rateLimitsResponse.RateLimits.PlanType)
+		if planType != "" {
+			refreshedAccount.PlanType = &planType
+		}
+	}
+	if err := client.Close(context.Background()); err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "关闭 Codex app-server 失败", err)
+	}
+	snapshot, err := mapUsageSnapshot(*refreshedAccount, rateLimitsResponse, providerImpl.now().UTC().UnixMilli())
+	if err != nil {
+		return provider.RateLimitResetResult{}, err
+	}
+	if err := providerImpl.credentials.ImportFromCodexDir(ctx, providerID, account.StorageID, runtimeDir); err != nil {
+		return provider.RateLimitResetResult{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "保存刷新后的 Codex auth.json 失败", err)
+	}
+	return provider.RateLimitResetResult{
+		Outcome: consumeResponse.Outcome,
+		Account: refreshedAccount,
+		Usage:   snapshot,
+	}, nil
+}
+
 func (providerImpl *Provider) refreshCodexHome(ctx context.Context, codexHome string, expectedAccountID string) (*entity.Account, *entity.UsageSnapshot, error) {
 	client, err := providerImpl.startClient(ctx, codexHome)
 	if err != nil {
@@ -335,7 +403,8 @@ type codexAccount struct {
 }
 
 type rateLimitsReadResponse struct {
-	RateLimits rateLimitSnapshot `json:"rateLimits"`
+	RateLimitResetCredits *rateLimitResetCreditsSummary `json:"rateLimitResetCredits"`
+	RateLimits            rateLimitSnapshot             `json:"rateLimits"`
 }
 
 type rateLimitSnapshot struct {
@@ -349,4 +418,28 @@ type rateLimitWindow struct {
 	UsedPercent        *float64 `json:"usedPercent"`
 	ResetsAt           *int64   `json:"resetsAt"`
 	WindowDurationMins *int64   `json:"windowDurationMins"`
+}
+
+type rateLimitResetCreditsSummary struct {
+	AvailableCount int64 `json:"availableCount"`
+}
+
+type consumeRateLimitResetCreditParams struct {
+	IdempotencyKey string `json:"idempotencyKey"`
+}
+
+type consumeRateLimitResetCreditResponse struct {
+	Outcome provider.RateLimitResetOutcome `json:"outcome"`
+}
+
+func validRateLimitResetOutcome(outcome provider.RateLimitResetOutcome) bool {
+	switch outcome {
+	case provider.RateLimitResetOutcomeReset,
+		provider.RateLimitResetOutcomeNothingToReset,
+		provider.RateLimitResetOutcomeNoCredit,
+		provider.RateLimitResetOutcomeAlreadyRedeemed:
+		return true
+	default:
+		return false
+	}
 }

@@ -6,6 +6,7 @@ const state = {
   accounts: [],
   loginTasks: new Map(),
   refreshingAccountKeys: new Set(),
+  resettingAccountKeys: new Set(),
   loading: false,
 };
 
@@ -140,6 +141,58 @@ async function refreshAccount(account) {
     state.refreshingAccountKeys.delete(key);
     render();
   }
+}
+
+async function resetAccountRateLimit(account) {
+  const key = accountKey(account);
+  if (state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key)) {
+    return;
+  }
+  const resetCredits = usageResetCredits(account.usage);
+  const confirmed = await confirmDialog({
+    title: account.label || account.email || account.accountId,
+    detailContent: resetConfirmationDetail(resetCredits ? resetCredits.availableCount : 0),
+    confirmText: "确认重置",
+  });
+  if (!confirmed) {
+    return;
+  }
+
+  state.resettingAccountKeys.add(key);
+  render();
+  try {
+    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/rate-limit/reset`, {
+      method: "POST",
+      body: { idempotencyKey: crypto.randomUUID() },
+    });
+    replaceAccount(result.account);
+    showMessage(resetOutcomeMessage(result.outcome));
+  } catch (error) {
+    showMessage(error.message || "额度重置失败", true);
+  } finally {
+    state.resettingAccountKeys.delete(key);
+    render();
+  }
+}
+
+function resetConfirmationDetail(availableCount) {
+  const content = document.createDocumentFragment();
+  content.append("当前可重置次数：");
+  const count = document.createElement("strong");
+  count.className = "dialog-reset-count";
+  count.textContent = `${availableCount}`;
+  content.append(count, "\n点击确认重置，将消耗 1 次重置机会，并重置当前符合条件的额度窗口。");
+  return content;
+}
+
+function resetOutcomeMessage(outcome) {
+  const messages = {
+    reset: "额度已重置",
+    nothingToReset: "当前没有可重置的额度窗口",
+    noCredit: "没有可用的重置次数",
+    alreadyRedeemed: "本次重置已完成",
+  };
+  return messages[outcome] || "额度重置状态已更新";
 }
 
 async function updatePlanExpiration(account) {
@@ -312,7 +365,9 @@ function accountCard(account, providerInfo) {
   const card = document.createElement("article");
   card.className = `account-card ${account.isActive ? "active" : ""}`;
   const isRefreshing = isAccountRefreshing(account);
-  if (isRefreshing) {
+  const isResetting = state.resettingAccountKeys.has(accountKey(account));
+  const isBusy = isRefreshing || isResetting;
+  if (isRefreshing || isResetting) {
     card.setAttribute("aria-busy", "true");
   }
 
@@ -342,20 +397,24 @@ function accountCard(account, providerInfo) {
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   header.append(main);
+  const resetCredits = usageResetCredits(account.usage);
+  if (resetCredits) {
+    header.append(usageResetButton(account, resetCredits, isRefreshing, isResetting));
+  }
   card.append(header);
 
   card.append(usageBlock(account.usage));
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isRefreshing));
+  actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isBusy));
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
-    actions.append(accountActionButton("激活", () => activateAccount(account), isRefreshing));
+    actions.append(accountActionButton("激活", () => activateAccount(account), isBusy));
   }
-  const deleteButton = accountActionButton("删除", () => deleteAccount(account), isRefreshing);
+  const deleteButton = accountActionButton("删除", () => deleteAccount(account), isBusy);
   deleteButton.className = "danger";
   deleteButton.dataset.isActive = account.isActive;
-  deleteButton.disabled = state.loading || isRefreshing || account.isActive;
+  deleteButton.disabled = state.loading || isBusy || account.isActive;
   actions.append(deleteButton);
   card.append(actions);
 
@@ -408,6 +467,37 @@ function limitItem(label, limit) {
     remainingPercent: clampPercent(100 - usedPercent),
     resetsAt: limit.resetsAt || null,
   };
+}
+
+function usageResetCredits(usage) {
+  if (!usage) {
+    return null;
+  }
+  const credits = usage.rateLimitResetCredits;
+  if (!credits || typeof credits.availableCount !== "number") {
+    return null;
+  }
+  return {
+    availableCount: Math.max(0, Math.trunc(credits.availableCount)),
+  };
+}
+
+function usageResetButton(account, resetCredits, isRefreshing, isResetting) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "usage-reset-button";
+  const icon = document.createElement("span");
+  icon.className = "usage-reset-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "↻";
+  button.append(icon);
+  button.setAttribute("aria-label", isResetting ? "正在重置额度" : `可重置次数 ${resetCredits.availableCount}，点击重置`);
+  button.title = isResetting ? "正在重置额度" : `使用 1 次重置，剩余 ${resetCredits.availableCount} 次`;
+  button.classList.toggle("is-resetting", isResetting);
+  button.setAttribute("aria-busy", `${isResetting}`);
+  button.disabled = state.loading || isRefreshing || isResetting || resetCredits.availableCount <= 0;
+  button.addEventListener("click", () => resetAccountRateLimit(account));
+  return button;
 }
 
 function usageLimitBlock(item) {
