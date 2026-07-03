@@ -360,14 +360,18 @@ h1 {
 
 .meta {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: 6px;
   margin-top: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .pill {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   max-width: 100%;
   min-height: 24px;
   border-radius: 999px;
@@ -376,7 +380,14 @@ h1 {
   padding: 3px 8px;
   font-size: 12px;
   font-weight: 650;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.meta .pill:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pill.interactive {

@@ -1,4 +1,4 @@
-let tooltipShowDelayMs = 500;
+let tooltipShowDelayMs = 300;
 let tooltipShowTimer = 0;
 let tooltipTarget = null;
 let tooltipPreviousDescribedBy = null;
