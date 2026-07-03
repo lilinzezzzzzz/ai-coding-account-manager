@@ -1,5 +1,17 @@
 import { api, getErrorMessage } from "./api.js?v=split-modules";
 import { confirmDialog, promptAuthJSON, promptTextDialog } from "./dialogs.js?v=split-modules";
+import {
+  clampPercent,
+  delay,
+  formatDateInput,
+  formatDateTime,
+  formatPercent,
+  formatPlanDate,
+  isValidDateInput,
+  parseSnapshot,
+  shortId,
+} from "./formatters.js?v=split-modules";
+import { hideTooltip, setTooltip, setupTooltips } from "./tooltip.js?v=split-modules";
 
 const state = {
   providers: [],
@@ -32,9 +44,11 @@ async function boot() {
 
 function setupGlobalEvents() {
   document.addEventListener("click", closeAddMenus);
+  setupTooltips();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeAddMenus();
+      hideTooltip();
     }
   });
 }
@@ -278,6 +292,7 @@ async function runAction(action) {
 }
 
 function render() {
+  hideTooltip();
   elements.providers.replaceChildren();
   if (state.providers.length === 0) {
     elements.providers.append(emptyState("没有 provider", "后端没有注册可用账号 provider。"));
@@ -483,6 +498,11 @@ function usageResetCredits(usage) {
 }
 
 function usageResetButton(account, resetCredits, isRefreshing, isResetting) {
+  const label = isResetting ? "正在重置额度" : `可重置次数 ${resetCredits.availableCount}，点击重置`;
+  const wrapper = document.createElement("span");
+  wrapper.className = "usage-reset-tooltip";
+  setTooltip(wrapper, label);
+
   const button = document.createElement("button");
   button.type = "button";
   button.className = "usage-reset-button";
@@ -491,13 +511,13 @@ function usageResetButton(account, resetCredits, isRefreshing, isResetting) {
   icon.setAttribute("aria-hidden", "true");
   icon.textContent = "↻";
   button.append(icon);
-  button.setAttribute("aria-label", isResetting ? "正在重置额度" : `可重置次数 ${resetCredits.availableCount}，点击重置`);
-  button.title = isResetting ? "正在重置额度" : `使用 1 次重置，剩余 ${resetCredits.availableCount} 次`;
+  button.setAttribute("aria-label", label);
   button.classList.toggle("is-resetting", isResetting);
   button.setAttribute("aria-busy", `${isResetting}`);
   button.disabled = state.loading || isRefreshing || isResetting || resetCredits.availableCount <= 0;
   button.addEventListener("click", () => resetAccountRateLimit(account));
-  return button;
+  wrapper.append(button);
+  return wrapper;
 }
 
 function usageLimitBlock(item) {
@@ -533,26 +553,6 @@ function usageLimitBlock(item) {
   return section;
 }
 
-function parseSnapshot(snapshotJson) {
-  if (!snapshotJson) {
-    return null;
-  }
-  try {
-    return JSON.parse(snapshotJson);
-  } catch (_) {
-    return null;
-  }
-}
-
-function clampPercent(value) {
-  return Math.max(0, Math.min(100, value));
-}
-
-function formatPercent(value) {
-  const rounded = Math.round(value * 10) / 10;
-  return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`;
-}
-
 function emptyState(title, detail) {
   const section = document.createElement("section");
   section.className = "empty-state";
@@ -580,12 +580,12 @@ function accountActionButton(label, handler, accountRefreshing) {
   return button;
 }
 
-function pill(text, title) {
+function pill(text, tooltipText) {
   const item = document.createElement("span");
   item.className = "pill";
   item.textContent = text;
-  if (title) {
-    item.title = title;
+  if (tooltipText) {
+    setTooltip(item, tooltipText);
   }
   return item;
 }
@@ -685,61 +685,4 @@ function isAccountRefreshing(account) {
 
 function accountKey(account) {
   return `${account.providerId}:${account.accountId}`;
-}
-
-function isValidDateInput(value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
-  }
-  const date = new Date(`${value}T00:00:00`);
-  return !Number.isNaN(date.getTime()) && formatDateInput(date.getTime()) === value;
-}
-
-function shortId(value) {
-  if (!value || value.length <= 18) {
-    return value || "id 未知";
-  }
-  return `${value.slice(0, 10)}...${value.slice(-6)}`;
-}
-
-function normalizeEpochMillis(value) {
-  return value > 0 && value < 100000000000 ? value * 1000 : value;
-}
-
-function formatDateTime(value) {
-  if (!value) {
-    return "未知";
-  }
-  const millis = normalizeEpochMillis(value);
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZoneName: "short",
-  }).format(new Date(millis));
-}
-
-function formatPlanDate(value) {
-  const millis = normalizeEpochMillis(value);
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  }).format(new Date(millis));
-}
-
-function formatDateInput(value) {
-  const millis = normalizeEpochMillis(value);
-  const date = new Date(millis);
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function delay(ms) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

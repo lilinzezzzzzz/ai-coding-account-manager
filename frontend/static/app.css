@@ -191,6 +191,27 @@ h1 {
   display: none;
 }
 
+.app-tooltip {
+  position: fixed;
+  z-index: 1200;
+  max-width: min(320px, calc(100vw - 16px));
+  border: 1px solid #263447;
+  border-radius: 6px;
+  background: #18212f;
+  color: #ffffff;
+  box-shadow: 0 10px 24px rgb(24 33 47 / 18%);
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+
+.app-tooltip[hidden] {
+  display: none;
+}
+
 .message::before {
   content: "";
   width: 18px;
@@ -430,6 +451,11 @@ h1 {
 .usage-reset {
   color: #617083;
   text-align: left;
+}
+
+.usage-reset-tooltip {
+  flex: 0 0 auto;
+  display: inline-flex;
 }
 
 .usage-reset-button {

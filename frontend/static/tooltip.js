@@ -1,0 +1,130 @@
+let tooltipShowDelayMs = 500;
+let tooltipShowTimer = 0;
+let tooltipTarget = null;
+let tooltipPreviousDescribedBy = null;
+let tooltipNode = null;
+let tooltipEventsBound = false;
+
+export function setupTooltips(options = {}) {
+  tooltipShowDelayMs = options.showDelayMs ?? tooltipShowDelayMs;
+  if (tooltipEventsBound) {
+    return;
+  }
+  tooltipEventsBound = true;
+  document.addEventListener("pointerover", handleTooltipPointerOver);
+  document.addEventListener("pointerout", handleTooltipPointerOut);
+  document.addEventListener("focusin", handleTooltipFocusIn);
+  document.addEventListener("focusout", handleTooltipFocusOut);
+  window.addEventListener("scroll", hideTooltip, true);
+  window.addEventListener("resize", hideTooltip);
+}
+
+export function setTooltip(element, text) {
+  element.dataset.tooltip = text;
+}
+
+export function hideTooltip() {
+  if (tooltipShowTimer) {
+    window.clearTimeout(tooltipShowTimer);
+    tooltipShowTimer = 0;
+  }
+  if (tooltipTarget) {
+    if (tooltipPreviousDescribedBy) {
+      tooltipTarget.setAttribute("aria-describedby", tooltipPreviousDescribedBy);
+    } else {
+      tooltipTarget.removeAttribute("aria-describedby");
+    }
+  }
+  tooltipTarget = null;
+  tooltipPreviousDescribedBy = null;
+  if (tooltipNode) {
+    tooltipNode.hidden = true;
+  }
+}
+
+function handleTooltipPointerOver(event) {
+  const target = tooltipTrigger(event.target);
+  if (!target || target.contains(event.relatedTarget)) {
+    return;
+  }
+  scheduleTooltip(target);
+}
+
+function handleTooltipPointerOut(event) {
+  const target = tooltipTrigger(event.target);
+  if (!target || target.contains(event.relatedTarget)) {
+    return;
+  }
+  hideTooltip();
+}
+
+function handleTooltipFocusIn(event) {
+  const target = tooltipTrigger(event.target);
+  if (target) {
+    scheduleTooltip(target);
+  }
+}
+
+function handleTooltipFocusOut(event) {
+  const target = tooltipTrigger(event.target);
+  if (target) {
+    hideTooltip();
+  }
+}
+
+function tooltipTrigger(target) {
+  return target instanceof Element ? target.closest("[data-tooltip]") : null;
+}
+
+function scheduleTooltip(target) {
+  const text = target.dataset.tooltip;
+  if (!text) {
+    return;
+  }
+  if (tooltipTarget === target && tooltipNode && !tooltipNode.hidden) {
+    return;
+  }
+  hideTooltip();
+  tooltipTarget = target;
+  tooltipShowTimer = window.setTimeout(() => showTooltip(target, text), tooltipShowDelayMs);
+}
+
+function showTooltip(target, text) {
+  if (!document.contains(target)) {
+    hideTooltip();
+    return;
+  }
+  const node = ensureTooltipNode();
+  node.textContent = text;
+  node.hidden = false;
+  node.id = "app-tooltip";
+  tooltipPreviousDescribedBy = target.getAttribute("aria-describedby");
+  target.setAttribute("aria-describedby", node.id);
+  positionTooltip(node, target);
+}
+
+function ensureTooltipNode() {
+  if (!tooltipNode) {
+    tooltipNode = document.createElement("div");
+    tooltipNode.className = "app-tooltip";
+    tooltipNode.setAttribute("role", "tooltip");
+    tooltipNode.hidden = true;
+    document.body.append(tooltipNode);
+  }
+  return tooltipNode;
+}
+
+function positionTooltip(node, target) {
+  const gap = 8;
+  const margin = 8;
+  const rect = target.getBoundingClientRect();
+  const tooltipRect = node.getBoundingClientRect();
+  const maxLeft = window.innerWidth - tooltipRect.width - margin;
+  const maxTop = window.innerHeight - tooltipRect.height - margin;
+  const left = Math.max(margin, Math.min(rect.left + rect.width / 2 - tooltipRect.width / 2, maxLeft));
+  const topCandidate = rect.top - tooltipRect.height - gap;
+  const preferredTop = topCandidate >= margin ? topCandidate : rect.bottom + gap;
+  const top = Math.max(margin, Math.min(preferredTop, maxTop));
+  node.style.left = `${left}px`;
+  node.style.top = `${top}px`;
+}
