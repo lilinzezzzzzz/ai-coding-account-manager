@@ -16,7 +16,7 @@ func registerFrontendRoutes(router chi.Router) {
 	router.Get("/", fileServer.ServeHTTP)
 	router.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			httptransport.WriteError(w, writeAPINotFound(w, r))
+			httptransport.WriteError(r.Context(), w, writeAPINotFound(w, r))
 			return
 		}
 		if !staticFileExists(staticDir, r.URL.Path) {

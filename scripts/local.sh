@@ -6,9 +6,10 @@ REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
 APP_NAME="AI Coding Account Manager"
 RUN_DIR="${REPO_ROOT}/.run"
+LOG_DIR="${REPO_ROOT}/logs"
 PID_FILE="${RUN_DIR}/server.pid"
 BIN_FILE="${RUN_DIR}/ai-coding-account-manager"
-LOG_FILE="${RUN_DIR}/server.log"
+LOG_FILE="${LOG_DIR}/server.log"
 DEFAULT_CONFIG_FILE="${REPO_ROOT}/config/app.json"
 FAKE_CONFIG_FILE="${REPO_ROOT}/config/app.fake.json"
 DEFAULT_BIND_ADDR="127.0.0.1:43127"
@@ -29,12 +30,12 @@ Commands:
   stop       Stop the background server started by this script.
   restart    Stop then start the background server.
   status     Show background server status.
-  logs       Show background server logs from .run/server.log.
+  logs       Show background server logs from logs/server.log.
 USAGE
 }
 
 ensure_runtime_dirs() {
-  mkdir -p "${RUN_DIR}" "${REPO_ROOT}/config"
+  mkdir -p "${RUN_DIR}" "${LOG_DIR}" "${REPO_ROOT}/config"
 }
 
 resolve_path() {
@@ -289,7 +290,7 @@ start_background() {
   echo "  pid file: ${PID_FILE}"
 
   cd "${REPO_ROOT}"
-  "${BIN_FILE}" --config "${config_file}" >>"${LOG_FILE}" 2>&1 &
+  AI_CODING_ACCOUNT_MANAGER_LOG_FILE="${LOG_FILE}" "${BIN_FILE}" --config "${config_file}" >>"${LOG_FILE}" 2>&1 &
   pid="$!"
   echo "${pid}" >"${PID_FILE}"
 
@@ -402,7 +403,7 @@ show_logs() {
   fi
 
   if [[ "${FOLLOW_LOGS}" -eq 1 ]]; then
-    exec tail -n 100 -f "${LOG_FILE}"
+    exec tail -n 100 -F "${LOG_FILE}"
   fi
   tail -n 100 "${LOG_FILE}"
 }

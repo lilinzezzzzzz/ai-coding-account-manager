@@ -30,6 +30,7 @@ func NewHandler(cfg Config) http.Handler {
 }
 
 func registerMiddlewares(router chi.Router, securityManager *security.Manager) {
+	router.Use(middleware.TraceRequest)
 	router.Use(middleware.SecurityHeaders)
 	router.Use(middleware.RequireHost(securityManager))
 }

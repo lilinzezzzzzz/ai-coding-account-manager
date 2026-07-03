@@ -57,6 +57,10 @@ go version
 ./scripts/local.sh logs --follow
 ```
 
+后台启动时日志追加写入 `logs/server.log`，并按自然日轮转为
+`logs/server-YYYY-MM-DD.log`；每个 HTTP 响应都会返回 `X-Trace-ID`，对应日志字段为
+`trace_id`。
+
 服务启动后，用浏览器打开日志中的本地 URL 即可使用。
 
 停止服务：

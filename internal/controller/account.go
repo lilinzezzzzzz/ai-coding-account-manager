@@ -30,7 +30,7 @@ func (controller AccountController) ListAccounts(w http.ResponseWriter, r *http.
 	for _, account := range accounts {
 		response = append(response, httpcontract.AccountViewResponse(account))
 	}
-	httptransport.WriteOK(w, response)
+	httptransport.WriteOK(r.Context(), w, response)
 	return nil
 }
 
@@ -55,8 +55,8 @@ func (controller AccountController) CreateAccount(w http.ResponseWriter, r *http
 	if err != nil {
 		return err
 	}
-	slog.Info("account created", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
-	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
+	slog.InfoContext(r.Context(), "account created", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
+	httptransport.WriteOK(r.Context(), w, httpcontract.AccountViewResponse(account))
 	return nil
 }
 
@@ -78,8 +78,8 @@ func (controller AccountController) ImportAccountAuthJSONAndRefresh(w http.Respo
 	if err != nil {
 		return err
 	}
-	slog.Info("account auth imported and refreshed", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
-	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
+	slog.InfoContext(r.Context(), "account auth imported and refreshed", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
+	httptransport.WriteOK(r.Context(), w, httpcontract.AccountViewResponse(account))
 	return nil
 }
 
@@ -93,8 +93,8 @@ func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, 
 	if err != nil {
 		return err
 	}
-	slog.Info("current account imported", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
-	httptransport.WriteOK(w, httpcontract.AccountViewResponse(account))
+	slog.InfoContext(r.Context(), "current account imported", "provider_id", account.Account.ProviderID, "account_id", account.Account.AccountID)
+	httptransport.WriteOK(r.Context(), w, httpcontract.AccountViewResponse(account))
 	return nil
 }
 
@@ -116,13 +116,13 @@ func (controller AccountController) UpdatePlanExpiration(w http.ResponseWriter, 
 	if err != nil {
 		return err
 	}
-	slog.Info(
+	slog.InfoContext(r.Context(),
 		"account plan expiration updated",
 		"provider_id", account.ProviderID,
 		"account_id", account.AccountID,
 		"plan_expires_at_set", account.PlanExpiresAt != nil,
 	)
-	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
+	httptransport.WriteOK(r.Context(), w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }
 
@@ -141,8 +141,8 @@ func (controller AccountController) ActivateAccount(w http.ResponseWriter, r *ht
 	if err != nil {
 		return err
 	}
-	slog.Info("account activated", "provider_id", account.ProviderID, "account_id", account.AccountID)
-	httptransport.WriteOK(w, httpcontract.AccountEntityResponse(account, nil))
+	slog.InfoContext(r.Context(), "account activated", "provider_id", account.ProviderID, "account_id", account.AccountID)
+	httptransport.WriteOK(r.Context(), w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }
 
@@ -155,8 +155,8 @@ func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http
 	if err := controller.accounts.DeleteAccount(r.Context(), providerID, accountID); err != nil {
 		return err
 	}
-	slog.Info("account deleted", "provider_id", providerID, "account_id", accountID)
-	httptransport.WriteOK(w, map[string]bool{"deleted": true})
+	slog.InfoContext(r.Context(), "account deleted", "provider_id", providerID, "account_id", accountID)
+	httptransport.WriteOK(r.Context(), w, map[string]bool{"deleted": true})
 	return nil
 }
 
@@ -175,14 +175,14 @@ func (controller AccountController) RefreshAccount(w http.ResponseWriter, r *htt
 		if result.Account.Usage != nil {
 			usageStatus = result.Account.Usage.Status
 		}
-		slog.Info(
+		slog.InfoContext(r.Context(),
 			"account refreshed",
 			"provider_id", result.ProviderID,
 			"account_id", result.AccountID,
 			"usage_status", usageStatus,
 		)
 	}
-	httptransport.WriteOK(w, httpcontract.RefreshResultHTTPResponse(result))
+	httptransport.WriteOK(r.Context(), w, httpcontract.RefreshResultHTTPResponse(result))
 	return nil
 }
 
@@ -204,12 +204,12 @@ func (controller AccountController) ResetAccountRateLimit(w http.ResponseWriter,
 	if err != nil {
 		return err
 	}
-	slog.Info(
+	slog.InfoContext(r.Context(),
 		"account rate limit reset attempted",
 		"provider_id", providerID,
 		"account_id", accountID,
 		"outcome", result.Outcome,
 	)
-	httptransport.WriteOK(w, httpcontract.ResetRateLimitHTTPResponse(result))
+	httptransport.WriteOK(r.Context(), w, httpcontract.ResetRateLimitHTTPResponse(result))
 	return nil
 }

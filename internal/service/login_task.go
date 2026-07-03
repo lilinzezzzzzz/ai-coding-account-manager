@@ -192,7 +192,8 @@ func (service *LoginTaskService) Create(ctx context.Context, input CreateLoginTa
 		task.ExpectedEmail = &expectedEmail
 	}
 
-	runCtx, cancel := context.WithDeadline(context.Background(), now.Add(service.taskTTL))
+	// 异步任务不跟随 HTTP 请求取消，但保留 Trace ID 等 context value。
+	runCtx, cancel := context.WithDeadline(context.WithoutCancel(ctx), now.Add(service.taskTTL))
 	state := &loginTaskState{task: task, cancel: cancel, dir: taskDir}
 
 	service.mu.Lock()
@@ -256,7 +257,7 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 	})
 	runtime, err := service.resolver.Resolve(ctx)
 	if err != nil {
-		service.failTask(taskID, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "未找到可用 Codex runtime", err))
+		service.failTask(ctx, taskID, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "未找到可用 Codex runtime", err))
 		service.cleanupTaskDir(taskID)
 		return
 	}
@@ -281,16 +282,16 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
-			service.markCancelled(taskID)
+			service.markCancelled(ctx, taskID)
 			service.cleanupTaskDir(taskID)
 			return
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
-			service.markExpired(taskID)
+			service.markExpired(ctx, taskID)
 			service.cleanupTaskDir(taskID)
 			return
 		}
-		service.failTask(taskID, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 登录失败", err))
+		service.failTask(ctx, taskID, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 登录失败", err))
 		service.cleanupTaskDir(taskID)
 		return
 	}
@@ -300,23 +301,23 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 	})
 	account, err := service.importer.ReadAccountFromCodexDir(ctx, codexHome)
 	if err != nil {
-		service.failTask(taskID, err)
+		service.failTask(ctx, taskID, err)
 		service.cleanupTaskDir(taskID)
 		return
 	}
 	if err := service.validateExpectedEmail(taskID, account); err != nil {
-		service.failTask(taskID, err)
+		service.failTask(ctx, taskID, err)
 		service.cleanupTaskDir(taskID)
 		return
 	}
 	if err := service.importer.ImportAccountAuthFromCodexDir(ctx, *account, codexHome); err != nil {
-		service.failTask(taskID, err)
+		service.failTask(ctx, taskID, err)
 		service.cleanupTaskDir(taskID)
 		return
 	}
 	persisted, err := service.persistImportedAccount(ctx, *account)
 	if err != nil {
-		service.failTask(taskID, err)
+		service.failTask(ctx, taskID, err)
 		service.cleanupTaskDir(taskID)
 		return
 	}
@@ -327,7 +328,7 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 		task.ErrorCode = nil
 		task.ErrorMessage = nil
 	})
-	slog.Info(
+	slog.InfoContext(ctx,
 		"login task imported account",
 		"provider_id", persisted.ProviderID,
 		"task_id", taskID,
@@ -404,7 +405,7 @@ func (service *LoginTaskService) updateTask(taskID string, update func(*LoginTas
 	state.task.UpdatedAt = service.now().UTC().UnixMilli()
 }
 
-func (service *LoginTaskService) failTask(taskID string, err error) {
+func (service *LoginTaskService) failTask(ctx context.Context, taskID string, err error) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	state, ok := service.tasks[taskID]
@@ -430,20 +431,20 @@ func (service *LoginTaskService) failTask(taskID string, err error) {
 	if appErr, ok := entity.AsAppError(err); ok && appErr.Cause != nil {
 		fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
 	}
-	slog.Warn("login task failed", fields...)
+	slog.WarnContext(ctx, "login task failed", fields...)
 }
 
-func (service *LoginTaskService) markCancelled(taskID string) {
+func (service *LoginTaskService) markCancelled(ctx context.Context, taskID string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if state, ok := service.tasks[taskID]; ok && !isTerminalLoginTaskStatus(state.task.Status) {
 		state.task.Status = LoginTaskStatusCancelled
 		state.task.UpdatedAt = service.now().UTC().UnixMilli()
-		slog.Info("login task cancelled", "provider_id", state.task.ProviderID, "task_id", taskID)
+		slog.InfoContext(ctx, "login task cancelled", "provider_id", state.task.ProviderID, "task_id", taskID)
 	}
 }
 
-func (service *LoginTaskService) markExpired(taskID string) {
+func (service *LoginTaskService) markExpired(ctx context.Context, taskID string) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if state, ok := service.tasks[taskID]; ok && !isTerminalLoginTaskStatus(state.task.Status) {
@@ -453,7 +454,7 @@ func (service *LoginTaskService) markExpired(taskID string) {
 		state.task.ErrorCode = &code
 		state.task.ErrorMessage = &message
 		state.task.UpdatedAt = service.now().UTC().UnixMilli()
-		slog.Warn("login task expired", "provider_id", state.task.ProviderID, "task_id", taskID, "error_code", code)
+		slog.WarnContext(ctx, "login task expired", "provider_id", state.task.ProviderID, "task_id", taskID, "error_code", code)
 	}
 }
 

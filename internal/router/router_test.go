@@ -28,6 +28,9 @@ func TestHealthEndpoint(t *testing.T) {
 		t.Fatalf("body = %q, want health envelope", body)
 	}
 	assertSecurityHeaders(t, response.Result().Header)
+	if traceID := response.Header().Get("X-Trace-ID"); traceID == "" {
+		t.Fatal("X-Trace-ID response header is empty")
+	}
 }
 
 func TestRootEndpointNotFound(t *testing.T) {

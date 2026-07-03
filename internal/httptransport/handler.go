@@ -16,7 +16,7 @@ func Handle(fn HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := fn(w, r); err != nil {
 			logRequestFailure(r, err)
-			WriteError(w, err)
+			WriteError(r.Context(), w, err)
 			return
 		}
 	}
@@ -34,8 +34,8 @@ func logRequestFailure(r *http.Request, err error) {
 	}
 
 	if appErr.ErrorCode() == entity.ErrorCodeInternal {
-		slog.Error("api request failed", fields...)
+		slog.ErrorContext(r.Context(), "api request failed", fields...)
 		return
 	}
-	slog.Warn("api request rejected", fields...)
+	slog.WarnContext(r.Context(), "api request rejected", fields...)
 }

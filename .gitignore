@@ -35,6 +35,7 @@ infras/postgres/data/*
 .data/
 .data-fake/
 .run/
+logs/
 
 # Screenshots
 screenshot*.png

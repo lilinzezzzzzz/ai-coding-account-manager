@@ -37,14 +37,14 @@ func (controller LoginTaskController) CreateLoginTask(w http.ResponseWriter, r *
 	if err != nil {
 		return err
 	}
-	slog.Info(
+	slog.InfoContext(r.Context(),
 		"login task created",
 		"provider_id", task.ProviderID,
 		"task_id", task.TaskID,
 		"mode", task.Mode,
 		"expected_email_set", task.ExpectedEmail != nil,
 	)
-	httptransport.WriteOK(w, httpcontract.LoginTaskHTTPResponse(task))
+	httptransport.WriteOK(r.Context(), w, httpcontract.LoginTaskHTTPResponse(task))
 	return nil
 }
 
@@ -62,7 +62,7 @@ func (controller LoginTaskController) GetLoginTask(w http.ResponseWriter, r *htt
 	if err != nil {
 		return err
 	}
-	httptransport.WriteOK(w, httpcontract.LoginTaskHTTPResponse(task))
+	httptransport.WriteOK(r.Context(), w, httpcontract.LoginTaskHTTPResponse(task))
 	return nil
 }
 
@@ -80,12 +80,12 @@ func (controller LoginTaskController) CancelLoginTask(w http.ResponseWriter, r *
 	if err != nil {
 		return err
 	}
-	slog.Info(
+	slog.InfoContext(r.Context(),
 		"login task cancel requested",
 		"provider_id", task.ProviderID,
 		"task_id", task.TaskID,
 		"status", task.Status,
 	)
-	httptransport.WriteOK(w, httpcontract.LoginTaskHTTPResponse(task))
+	httptransport.WriteOK(r.Context(), w, httpcontract.LoginTaskHTTPResponse(task))
 	return nil
 }

@@ -329,7 +329,7 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(account, result.ErrorCode, err)
+		logRefreshFailure(ctx, account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
@@ -344,14 +344,14 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(account, result.ErrorCode, err)
+		logRefreshFailure(ctx, account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
 	if err := validateRefreshedAccount(account, refreshedAccount); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(account, result.ErrorCode, err)
+		logRefreshFailure(ctx, account, result.ErrorCode, err)
 		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
 		return result
 	}
@@ -360,7 +360,7 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot, refreshedViewAccount.UpdatedAt); err != nil {
 		result.ErrorCode = errorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(account, result.ErrorCode, err)
+		logRefreshFailure(ctx, account, result.ErrorCode, err)
 		return result
 	}
 	result.Account = &AccountWithUsage{
@@ -465,7 +465,7 @@ func (service *AccountService) getExistingAccount(ctx context.Context, providerI
 
 func (service *AccountService) cleanupImportedAccountData(ctx context.Context, registeredProvider provider.Provider, account entity.Account) {
 	if err := registeredProvider.RemoveAccountData(ctx, account); err != nil {
-		slog.Warn(
+		slog.WarnContext(ctx,
 			"cleanup imported account credentials failed",
 			"provider_id", account.ProviderID,
 			"account_id", account.AccountID,
@@ -503,7 +503,7 @@ func errorMessagePtr(err error) *string {
 	return nil
 }
 
-func logRefreshFailure(account entity.Account, code *entity.ErrorCode, err error) {
+func logRefreshFailure(ctx context.Context, account entity.Account, code *entity.ErrorCode, err error) {
 	fields := []any{
 		"provider_id", account.ProviderID,
 		"account_id", account.AccountID,
@@ -515,7 +515,7 @@ func logRefreshFailure(account entity.Account, code *entity.ErrorCode, err error
 	if appErr, ok := entity.AsAppError(err); ok && appErr.Cause != nil {
 		fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
 	}
-	slog.Warn("account refresh failed", fields...)
+	slog.WarnContext(ctx, "account refresh failed", fields...)
 }
 
 func accountKey(providerID string, accountID string) string {

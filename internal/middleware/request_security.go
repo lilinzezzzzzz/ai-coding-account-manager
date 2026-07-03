@@ -29,7 +29,7 @@ func RequireHost(manager *security.Manager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !manager.ValidateHost(r.Host) {
-				httptransport.WriteErrorWithStatus(w, entity.NewAppError(entity.ErrorCodeForbidden), http.StatusForbidden)
+				httptransport.WriteErrorWithStatus(r.Context(), w, entity.NewAppError(entity.ErrorCodeForbidden), http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -42,7 +42,7 @@ func RequireOrigin(manager *security.Manager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !manager.ValidateOriginForHost(r.Header.Get("Origin"), r.Host) {
-				httptransport.WriteErrorWithStatus(w, entity.NewAppError(entity.ErrorCodeForbidden), http.StatusForbidden)
+				httptransport.WriteErrorWithStatus(r.Context(), w, entity.NewAppError(entity.ErrorCodeForbidden), http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -80,7 +80,7 @@ func RequireJSONContentType(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || mediaType != jsonMediaType {
-			httptransport.WriteErrorWithStatus(w, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "Content-Type 必须是 application/json"), http.StatusBadRequest)
+			httptransport.WriteErrorWithStatus(r.Context(), w, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "Content-Type 必须是 application/json"), http.StatusBadRequest)
 			return
 		}
 		next.ServeHTTP(w, r)

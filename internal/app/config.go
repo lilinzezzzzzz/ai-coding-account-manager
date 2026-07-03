@@ -4,21 +4,42 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/config"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/database"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/logging"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/tracing"
 )
 
-func setupLogger() *slog.Logger {
+const logFileEnv = "AI_CODING_ACCOUNT_MANAGER_LOG_FILE"
+
+func setupLogger() (*slog.Logger, io.Closer, error) {
 	// 进程入口先建立默认 logger，后续启动失败也能输出结构化错误。
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	fallbackLogger := newLogger(os.Stderr)
+	slog.SetDefault(fallbackLogger)
+
+	logFile := strings.TrimSpace(os.Getenv(logFileEnv))
+	if logFile == "" {
+		return fallbackLogger, nil, nil
+	}
+	writer, err := logging.NewDailyWriter(logFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("setup rotating log file: %w", err)
+	}
+	logger := newLogger(writer)
 	slog.SetDefault(logger)
-	return logger
+	return logger, writer, nil
+}
+
+func newLogger(output io.Writer) *slog.Logger {
+	return slog.New(tracing.NewHandler(slog.NewTextHandler(output, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
 }
 
 func loadConfig(args []string) (config.Config, error) {

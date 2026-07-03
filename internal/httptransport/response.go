@@ -1,6 +1,7 @@
 package httptransport
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -17,8 +18,8 @@ type responseEnvelope struct {
 const successCode = "SUCCESS"
 
 // WriteOK 写入统一成功响应。
-func WriteOK(w http.ResponseWriter, data any) {
-	writeJSON(w, http.StatusOK, responseEnvelope{
+func WriteOK(ctx context.Context, w http.ResponseWriter, data any) {
+	writeJSON(ctx, w, http.StatusOK, responseEnvelope{
 		Data:    data,
 		Code:    successCode,
 		Message: "成功",
@@ -26,14 +27,14 @@ func WriteOK(w http.ResponseWriter, data any) {
 }
 
 // WriteError 将业务错误映射为统一错误响应。
-func WriteError(w http.ResponseWriter, err error) {
-	WriteErrorWithStatus(w, err, statusForError(err))
+func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
+	WriteErrorWithStatus(ctx, w, err, statusForError(err))
 }
 
 // WriteErrorWithStatus 将业务错误按指定 HTTP status 写为统一错误响应。
-func WriteErrorWithStatus(w http.ResponseWriter, err error, statusCode int) {
+func WriteErrorWithStatus(ctx context.Context, w http.ResponseWriter, err error, statusCode int) {
 	appErr := normalizeError(err)
-	writeJSON(w, statusCode, responseEnvelope{
+	writeJSON(ctx, w, statusCode, responseEnvelope{
 		Data:    nil,
 		Code:    string(appErr.ErrorCode()),
 		Message: appErr.DisplayMessage(),
@@ -70,10 +71,10 @@ func normalizeError(err error) *entity.AppError {
 	return appErr
 }
 
-func writeJSON(w http.ResponseWriter, statusCode int, value any) {
+func writeJSON(ctx context.Context, w http.ResponseWriter, statusCode int, value any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(statusCode)
 	if err := json.NewEncoder(w).Encode(value); err != nil {
-		slog.Error("write json response failed", "error", err)
+		slog.ErrorContext(ctx, "write json response failed", "error", err)
 	}
 }

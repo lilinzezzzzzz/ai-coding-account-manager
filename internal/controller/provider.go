@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -27,18 +28,18 @@ func (controller ProviderController) ListProviders(w http.ResponseWriter, r *htt
 	response := make([]httpcontract.ProviderResponse, 0, len(descriptions))
 	for _, description := range descriptions {
 		if description.Status != "" && description.Status != provider.StatusAvailable {
-			logProviderUnavailable(description.ID, description.ErrorCode)
+			logProviderUnavailable(r.Context(), description.ID, description.ErrorCode)
 		}
 		response = append(response, httpcontract.ProviderHTTPResponse(description))
 	}
-	httptransport.WriteOK(w, response)
+	httptransport.WriteOK(r.Context(), w, response)
 	return nil
 }
 
-func logProviderUnavailable(providerID string, code *entity.ErrorCode) {
+func logProviderUnavailable(ctx context.Context, providerID string, code *entity.ErrorCode) {
 	fields := []any{"provider_id", providerID}
 	if code != nil {
 		fields = append(fields, "error_code", *code)
 	}
-	slog.Warn("provider unavailable", fields...)
+	slog.WarnContext(ctx, "provider unavailable", fields...)
 }
