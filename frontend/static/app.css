@@ -205,7 +205,8 @@ h1 {
   font-weight: 650;
   line-height: 1.4;
   overflow-wrap: anywhere;
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: text;
 }
 
 .app-tooltip[hidden] {

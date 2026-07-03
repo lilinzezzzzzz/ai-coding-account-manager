@@ -1,5 +1,7 @@
 let tooltipShowDelayMs = 300;
+const tooltipHideDelayMs = 150;
 let tooltipShowTimer = 0;
+let tooltipHideTimer = 0;
 let tooltipTarget = null;
 let tooltipPreviousDescribedBy = null;
 let tooltipNode = null;
@@ -28,6 +30,10 @@ export function hideTooltip() {
     window.clearTimeout(tooltipShowTimer);
     tooltipShowTimer = 0;
   }
+  if (tooltipHideTimer) {
+    window.clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = 0;
+  }
   if (tooltipTarget) {
     if (tooltipPreviousDescribedBy) {
       tooltipTarget.setAttribute("aria-describedby", tooltipPreviousDescribedBy);
@@ -55,7 +61,7 @@ function handleTooltipPointerOut(event) {
   if (!target || target.contains(event.relatedTarget)) {
     return;
   }
-  hideTooltip();
+  scheduleHideTooltip(event.relatedTarget);
 }
 
 function handleTooltipFocusIn(event) {
@@ -81,12 +87,28 @@ function scheduleTooltip(target) {
   if (!text) {
     return;
   }
+  cancelTooltipHide();
   if (tooltipTarget === target && tooltipNode && !tooltipNode.hidden) {
     return;
   }
   hideTooltip();
   tooltipTarget = target;
   tooltipShowTimer = window.setTimeout(() => showTooltip(target, text), tooltipShowDelayMs);
+}
+
+function scheduleHideTooltip(relatedTarget) {
+  if (isTooltipOrTarget(relatedTarget)) {
+    return;
+  }
+  cancelTooltipHide();
+  tooltipHideTimer = window.setTimeout(hideTooltip, tooltipHideDelayMs);
+}
+
+function cancelTooltipHide() {
+  if (tooltipHideTimer) {
+    window.clearTimeout(tooltipHideTimer);
+    tooltipHideTimer = 0;
+  }
 }
 
 function showTooltip(target, text) {
@@ -109,9 +131,22 @@ function ensureTooltipNode() {
     tooltipNode.className = "app-tooltip";
     tooltipNode.setAttribute("role", "tooltip");
     tooltipNode.hidden = true;
+    tooltipNode.addEventListener("pointerover", cancelTooltipHide);
+    tooltipNode.addEventListener("pointerout", (event) => {
+      if (!tooltipNode.contains(event.relatedTarget)) {
+        scheduleHideTooltip(event.relatedTarget);
+      }
+    });
     document.body.append(tooltipNode);
   }
   return tooltipNode;
+}
+
+function isTooltipOrTarget(node) {
+  if (!(node instanceof Node)) {
+    return false;
+  }
+  return Boolean((tooltipNode && tooltipNode.contains(node)) || (tooltipTarget && tooltipTarget.contains(node)));
 }
 
 function positionTooltip(node, target) {
