@@ -1,4 +1,8 @@
 import { api, getErrorMessage } from "./api.js?v=split-modules";
+import { closeAddMenus } from "./components/add-menu.js?v=components";
+import { emptyState } from "./components/common.js?v=components";
+import { providerSection } from "./components/provider-section.js?v=components";
+import { usageResetCredits } from "./components/usage-limit.js?v=components";
 import {
   confirmDialog,
   promptAuthJSON,
@@ -6,17 +10,11 @@ import {
   promptTextDialog,
 } from "./dialogs.js?v=split-modules";
 import {
-  clampPercent,
   delay,
   formatDateInput,
-  formatDateTime,
-  formatPercent,
-  formatPlanDate,
   isValidDateInput,
-  parseSnapshot,
-  shortId,
 } from "./formatters.js?v=split-modules";
-import { hideTooltip, setTooltip, setupTooltips } from "./tooltip.js?v=tooltip-position";
+import { hideTooltip, setupTooltips } from "./tooltip.js?v=tooltip-position";
 
 const state = {
   providers: [],
@@ -55,12 +53,6 @@ function setupGlobalEvents() {
       closeAddMenus();
       hideTooltip();
     }
-  });
-}
-
-function closeAddMenus() {
-  document.querySelectorAll(".add-menu-trigger[aria-expanded='true']").forEach((trigger) => {
-    trigger.setAttribute("aria-expanded", "false");
   });
 }
 
@@ -324,425 +316,26 @@ function render() {
   }
 
   for (const providerInfo of state.providers) {
-    const section = document.createElement("section");
-    section.className = "provider-section";
-
     const accounts = state.accounts.filter((account) => account.providerId === providerInfo.id);
-
-    const header = document.createElement("div");
-    header.className = "provider-header";
-    header.append(providerTitle(providerInfo));
-    header.append(providerActions(providerInfo));
-    section.append(header);
-
-    if (accounts.length === 0) {
-      section.append(emptyState("还没有账号", "点击“添加账号”，通过登录或导入 auth.json 开始使用。"));
-    } else {
-      const grid = document.createElement("div");
-      grid.className = "account-grid";
-      for (const account of accounts) {
-        grid.append(accountCard(account, providerInfo));
-      }
-      section.append(grid);
-    }
-    elements.providers.append(section);
+    elements.providers.append(
+      providerSection({
+        providerInfo,
+        accounts,
+        loading: state.loading,
+        accountState,
+        actions: {
+          createLoginTask,
+          importProviderAuthJSON,
+          importProviderAuthJSONFile,
+          refreshAccount,
+          activateAccount,
+          deleteAccount,
+          resetAccountRateLimit,
+          updatePlanExpiration,
+        },
+      }),
+    );
   }
-}
-
-function providerTitle(providerInfo) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "provider-title";
-  const title = document.createElement("h2");
-  title.textContent = providerInfo.displayName || providerInfo.id;
-  wrapper.append(title);
-  return wrapper;
-}
-
-function providerActions(providerInfo) {
-  const actions = document.createElement("div");
-  actions.className = "toolbar";
-  const menu = document.createElement("div");
-  menu.className = "add-menu";
-  const trigger = document.createElement("button");
-  trigger.type = "button";
-  trigger.className = "primary add-menu-trigger";
-  const triggerIcon = document.createElement("span");
-  triggerIcon.className = "add-menu-trigger-icon";
-  triggerIcon.setAttribute("aria-hidden", "true");
-  trigger.append(triggerIcon, "添加账号");
-  trigger.setAttribute("aria-haspopup", "menu");
-  trigger.setAttribute("aria-expanded", "false");
-  trigger.dataset.disabledWhenIdle = `${providerInfo.status !== "available"}`;
-  trigger.disabled = state.loading || trigger.dataset.disabledWhenIdle === "true";
-  trigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    const expanded = trigger.getAttribute("aria-expanded") === "true";
-    closeAddMenus();
-    trigger.setAttribute("aria-expanded", expanded ? "false" : "true");
-  });
-  trigger.addEventListener("keydown", (event) => {
-    if (!["ArrowDown", "ArrowUp"].includes(event.key)) {
-      return;
-    }
-    event.preventDefault();
-    closeAddMenus();
-    trigger.setAttribute("aria-expanded", "true");
-    focusAddMenuItem(options, event.key === "ArrowUp" ? "last" : "first");
-  });
-  menu.append(trigger);
-
-  const options = document.createElement("div");
-  options.className = "add-menu-options";
-  options.setAttribute("role", "menu");
-  options.setAttribute("aria-label", "添加账号");
-  options.append(
-    addMenuItem(
-      {
-        label: "登录",
-        description: "通过浏览器完成账号授权",
-        icon: "→",
-        handler: () => createLoginTask(providerInfo.id),
-      },
-      providerInfo,
-    ),
-  );
-  const importGroup = document.createElement("div");
-  importGroup.className = "add-menu-group";
-  importGroup.setAttribute("role", "group");
-  importGroup.setAttribute("aria-label", "导入账号");
-  const importLabel = document.createElement("span");
-  importLabel.className = "add-menu-group-label";
-  importLabel.textContent = "导入账号";
-  importLabel.setAttribute("aria-hidden", "true");
-  importGroup.append(importLabel);
-  importGroup.append(
-    addMenuItem(
-      {
-        label: "文件",
-        description: "选择 auth.json 文件",
-        icon: "↑",
-        handler: () => importProviderAuthJSONFile(providerInfo.id),
-      },
-      providerInfo,
-    ),
-  );
-  importGroup.append(
-    addMenuItem(
-      {
-        label: "JSON",
-        description: "粘贴 auth.json 内容",
-        icon: "{}",
-        handler: () => importProviderAuthJSON(providerInfo.id),
-      },
-      providerInfo,
-    ),
-  );
-  options.append(importGroup);
-  options.addEventListener("keydown", (event) => handleAddMenuKeydown(event, options, trigger));
-  menu.append(options);
-  actions.append(menu);
-  return actions;
-}
-
-function addMenuItem(item, providerInfo) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "add-menu-item";
-  button.setAttribute("role", "menuitem");
-  button.dataset.disabledWhenIdle = `${providerInfo.status !== "available"}`;
-  button.disabled = state.loading || button.dataset.disabledWhenIdle === "true";
-
-  const icon = document.createElement("span");
-  icon.className = "add-menu-item-icon";
-  icon.textContent = item.icon;
-  icon.setAttribute("aria-hidden", "true");
-  const copy = document.createElement("span");
-  copy.className = "add-menu-item-copy";
-  const label = document.createElement("strong");
-  label.textContent = item.label;
-  const description = document.createElement("span");
-  description.textContent = item.description;
-  copy.append(label, description);
-  button.append(icon, copy);
-
-  button.addEventListener("click", () => {
-    closeAddMenus();
-    item.handler();
-  });
-  return button;
-}
-
-function handleAddMenuKeydown(event, menu, trigger) {
-  if (event.key === "Escape") {
-    event.preventDefault();
-    event.stopPropagation();
-    closeAddMenus();
-    trigger.focus();
-    return;
-  }
-  const positions = { ArrowDown: "next", ArrowUp: "previous", Home: "first", End: "last" };
-  const position = positions[event.key];
-  if (!position) {
-    return;
-  }
-  event.preventDefault();
-  focusAddMenuItem(menu, position);
-}
-
-function focusAddMenuItem(menu, position) {
-  const items = [...menu.querySelectorAll("[role='menuitem']:not(:disabled)")];
-  if (items.length === 0) {
-    return;
-  }
-  const currentIndex = items.indexOf(document.activeElement);
-  let nextIndex = 0;
-  if (position === "last") {
-    nextIndex = items.length - 1;
-  } else if (position === "next") {
-    nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
-  } else if (position === "previous") {
-    nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
-  }
-  items[nextIndex].focus();
-}
-
-function accountCard(account, providerInfo) {
-  const card = document.createElement("article");
-  card.className = `account-card ${account.isActive ? "active" : ""}`;
-  const isRefreshing = isAccountRefreshing(account);
-  const isResetting = state.resettingAccountKeys.has(accountKey(account));
-  const isBusy = isRefreshing || isResetting;
-  if (isRefreshing || isResetting) {
-    card.setAttribute("aria-busy", "true");
-  }
-
-  const header = document.createElement("div");
-  header.className = "account-card-header";
-
-  const main = document.createElement("div");
-  main.className = "account-main";
-  const name = document.createElement("div");
-  name.className = "account-name";
-  const title = document.createElement("h3");
-  title.textContent = account.label || account.email || account.accountId;
-  name.append(title);
-  if (account.isActive) {
-    const activeBadge = document.createElement("span");
-    activeBadge.className = "active-badge";
-    activeBadge.textContent = "当前";
-    name.append(activeBadge);
-  }
-  main.append(name);
-
-  const meta = document.createElement("div");
-  meta.className = "meta";
-  if (account.planType) {
-    meta.append(pill(account.planType));
-  }
-  meta.append(planExpirationPill(account));
-  meta.append(pill(shortId(account.accountId), account.accountId));
-  main.append(meta);
-  header.append(main);
-  const resetCredits = usageResetCredits(account.usage);
-  if (resetCredits) {
-    header.append(usageResetButton(account, resetCredits, isRefreshing, isResetting));
-  }
-  card.append(header);
-
-  card.append(usageBlock(account.usage));
-
-  const actions = document.createElement("div");
-  actions.className = "account-actions";
-  actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", () => refreshAccount(account), isBusy));
-  if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
-    actions.append(accountActionButton("激活", () => activateAccount(account), isBusy));
-  }
-  const deleteButton = accountActionButton("删除", () => deleteAccount(account), isBusy);
-  deleteButton.className = "danger";
-  deleteButton.dataset.disabledWhenIdle = `${isBusy || account.isActive}`;
-  deleteButton.disabled = state.loading || deleteButton.dataset.disabledWhenIdle === "true";
-  actions.append(deleteButton);
-  card.append(actions);
-
-  return card;
-}
-
-function usageBlock(usage) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "usage";
-  const limits = usageLimitItems(usage);
-  if (limits.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "usage-empty";
-    empty.textContent = usage ? "额度数据不可用" : "额度未刷新";
-    wrapper.append(empty);
-    return wrapper;
-  }
-  for (const item of limits) {
-    wrapper.append(usageLimitBlock(item));
-  }
-  return wrapper;
-}
-
-function usageLimitItems(usage) {
-  if (!usage) {
-    return [];
-  }
-  const snapshot = parseSnapshot(usage.snapshotJson);
-  const rateLimits = snapshot && snapshot.rateLimits ? snapshot.rateLimits : null;
-  if (rateLimits) {
-    return [
-      limitItem("5 小时限额", rateLimits.primary),
-      limitItem("7 天限额", rateLimits.secondary),
-    ].filter(Boolean);
-  }
-  if (typeof usage.usedPercent === "number") {
-    return [limitItem("5 小时限额", { usedPercent: usage.usedPercent, resetsAt: usage.resetsAt })].filter(Boolean);
-  }
-  return [];
-}
-
-function limitItem(label, limit) {
-  if (!limit || typeof limit.usedPercent !== "number") {
-    return null;
-  }
-  const usedPercent = clampPercent(limit.usedPercent);
-  return {
-    label,
-    usedPercent,
-    remainingPercent: clampPercent(100 - usedPercent),
-    resetsAt: limit.resetsAt || null,
-  };
-}
-
-function usageResetCredits(usage) {
-  if (!usage) {
-    return null;
-  }
-  const credits = usage.rateLimitResetCredits;
-  if (!credits || typeof credits.availableCount !== "number") {
-    return null;
-  }
-  return {
-    availableCount: Math.max(0, Math.trunc(credits.availableCount)),
-  };
-}
-
-function usageResetButton(account, resetCredits, isRefreshing, isResetting) {
-  const hasAvailableCredit = resetCredits.availableCount > 0;
-  const label = isResetting
-    ? "正在重置额度"
-    : hasAvailableCredit
-      ? `可重置次数 ${resetCredits.availableCount}，点击重置`
-      : "没有可用的重置次数";
-  const wrapper = document.createElement("span");
-  wrapper.className = "usage-reset-tooltip";
-  setTooltip(wrapper, label);
-
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "usage-reset-button";
-  const icon = document.createElement("span");
-  icon.className = "usage-reset-icon";
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = "↻";
-  button.append(icon);
-  button.setAttribute("aria-label", label);
-  button.classList.toggle("is-resetting", isResetting);
-  button.setAttribute("aria-busy", `${isResetting}`);
-  button.dataset.disabledWhenIdle = `${isRefreshing || isResetting || !hasAvailableCredit}`;
-  button.disabled = state.loading || button.dataset.disabledWhenIdle === "true";
-  button.addEventListener("click", () => resetAccountRateLimit(account));
-  wrapper.append(button);
-  return wrapper;
-}
-
-function usageLimitBlock(item) {
-  const section = document.createElement("section");
-  section.className = "usage-limit";
-  section.dataset.level = item.remainingPercent <= 15 ? "critical" : item.remainingPercent <= 35 ? "warning" : "normal";
-  const header = document.createElement("div");
-  header.className = "usage-limit-header";
-  const title = document.createElement("div");
-  title.className = "usage-limit-title";
-  title.textContent = item.label;
-  const remaining = document.createElement("strong");
-  remaining.className = "usage-remaining";
-  remaining.textContent = `剩余 ${formatPercent(item.remainingPercent)}`;
-  header.append(title, remaining);
-  section.append(header);
-
-  const progress = document.createElement("div");
-  progress.className = "usage-progress";
-  progress.setAttribute("role", "meter");
-  progress.setAttribute("aria-label", `${item.label}剩余额度`);
-  progress.setAttribute("aria-valuemin", "0");
-  progress.setAttribute("aria-valuemax", "100");
-  progress.setAttribute("aria-valuenow", `${Math.round(item.remainingPercent)}`);
-  const bar = document.createElement("div");
-  bar.className = "usage-progress-bar";
-  bar.style.width = `${item.remainingPercent}%`;
-  progress.append(bar);
-  section.append(progress);
-
-  const reset = document.createElement("div");
-  reset.className = "usage-reset";
-  reset.textContent = `重置时间 ${item.resetsAt ? formatDateTime(item.resetsAt) : "未知"}`;
-  section.append(reset);
-  return section;
-}
-
-function emptyState(title, detail) {
-  const section = document.createElement("section");
-  section.className = "empty-state";
-  const heading = document.createElement("h2");
-  heading.textContent = title;
-  const text = document.createElement("p");
-  text.textContent = detail;
-  section.append(heading, text);
-  return section;
-}
-
-function actionButton(label, handler) {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.disabled = state.loading;
-  button.addEventListener("click", handler);
-  return button;
-}
-
-function accountActionButton(label, handler, accountRefreshing) {
-  const button = actionButton(label, handler);
-  button.dataset.disabledWhenIdle = `${accountRefreshing}`;
-  button.disabled = state.loading || button.dataset.disabledWhenIdle === "true";
-  return button;
-}
-
-function pill(text, tooltipText) {
-  const item = document.createElement("span");
-  item.className = "pill";
-  item.textContent = text;
-  if (tooltipText) {
-    setTooltip(item, tooltipText);
-  }
-  return item;
-}
-
-function planExpirationPill(account) {
-  const text = account.planExpiresAt ? formatPlanDate(account.planExpiresAt) : "YYYY-MM-DD";
-  const item = pill(text, "点击录入套餐到期日，留空可清除");
-  item.classList.add("interactive", "plan-expiration");
-  item.tabIndex = 0;
-  item.setAttribute("role", "button");
-  item.addEventListener("click", () => updatePlanExpiration(account));
-  item.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      updatePlanExpiration(account);
-    }
-  });
-  return item;
 }
 
 function showMessage(text, isError = false, options = {}) {
@@ -812,6 +405,13 @@ function replaceAccount(updatedAccount) {
     return;
   }
   state.accounts = state.accounts.map((account, accountIndex) => (accountIndex === index ? updatedAccount : account));
+}
+
+function accountState(account) {
+  return {
+    isRefreshing: isAccountRefreshing(account),
+    isResetting: state.resettingAccountKeys.has(accountKey(account)),
+  };
 }
 
 function isAccountRefreshing(account) {
