@@ -63,8 +63,9 @@ go version
 ```
 
 后台启动时日志追加写入 `logs/server.log`，并按自然日轮转为
-`logs/server-YYYY-MM-DD.log`；每个 HTTP 响应都会返回 `X-Trace-ID`，对应日志字段为
-`trace_id`。
+`logs/server-YYYY-MM-DD.log`；日志格式为
+`time | level | location - trace_id msg ...`，不包含参数名。每个 HTTP 响应都会返回
+`X-Trace-ID`，对应日志内容中的第一个值。
 
 服务启动后，用浏览器打开日志中的本地 URL 即可使用。
 

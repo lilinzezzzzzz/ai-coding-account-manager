@@ -27,7 +27,12 @@ func TestSetupLoggerUsesConfiguredRotatingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile() error = %v", err)
 	}
-	if got := string(content); !strings.Contains(got, `msg="test log"`) || !strings.Contains(got, "trace_id=system") {
-		t.Fatalf("log content = %q, want text log with trace ID", got)
+	got := string(content)
+	if !strings.Contains(got, " | INFO     | ") || !strings.Contains(got, " - system test log") {
+		t.Fatalf("log content = %q, want line log with trace ID", got)
+	}
+	if strings.Contains(got, "time=") || strings.Contains(got, "level=") ||
+		strings.Contains(got, "trace_id=") || strings.Contains(got, "msg=") {
+		t.Fatalf("log content = %q, want values without field names", got)
 	}
 }

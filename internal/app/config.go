@@ -37,7 +37,7 @@ func setupLogger() (*slog.Logger, io.Closer, error) {
 }
 
 func newLogger(output io.Writer) *slog.Logger {
-	return slog.New(tracing.NewHandler(slog.NewTextHandler(output, &slog.HandlerOptions{
+	return slog.New(tracing.NewHandler(logging.NewLineHandler(output, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	})))
 }
