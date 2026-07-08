@@ -29,6 +29,70 @@ func TestNormalizeUsageSnapshotConvertsResetsAtSecondsToMillis(t *testing.T) {
 	}
 }
 
+func TestResetAccountRateLimitSkipsProviderWhenNoCreditAvailable(t *testing.T) {
+	ctx := context.Background()
+	appDB, err := database.Open(ctx, database.Config{
+		Path: filepath.Join(t.TempDir(), "state.db"),
+	})
+	if err != nil {
+		t.Fatalf("Open() error = %v", err)
+	}
+	defer func() {
+		if err := appDB.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+	}()
+
+	daos := dao.NewDAOs(appDB.GORM())
+	account := entity.Account{
+		ProviderID: "codex",
+		AccountID:  "acct-no-credit",
+		StorageID:  entity.StorageIDForAccount("codex", "acct-no-credit"),
+		Label:      "acct-no-credit",
+		CreatedAt:  1000,
+		UpdatedAt:  1000,
+	}
+	if err := daos.Accounts.Create(ctx, account); err != nil {
+		t.Fatalf("seed account error = %v", err)
+	}
+	snapshotJSON := `{"rateLimitResetCredits":{"availableCount":0}}`
+	usage := entity.UsageSnapshot{
+		ProviderID:   account.ProviderID,
+		AccountID:    account.AccountID,
+		Status:       entity.UsageStatusReady,
+		SnapshotJSON: &snapshotJSON,
+		RefreshedAt:  2000,
+	}
+	if err := daos.UsageSnapshots.Upsert(ctx, usage); err != nil {
+		t.Fatalf("seed usage snapshot error = %v", err)
+	}
+
+	baseProvider := fake.New(fake.Config{
+		ID:          "codex",
+		DisplayName: "Codex Fake",
+	})
+	resetProvider := &trackingRateLimitResetProvider{Provider: baseProvider}
+	registry := provider.NewRegistry()
+	if err := registry.Register(ctx, resetProvider); err != nil {
+		t.Fatalf("Register() error = %v", err)
+	}
+
+	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry)
+	result, err := accountService.ResetAccountRateLimit(ctx, account.ProviderID, account.AccountID, "reset-attempt-1")
+	if err != nil {
+		t.Fatalf("ResetAccountRateLimit() error = %v", err)
+	}
+	if result.Outcome != provider.RateLimitResetOutcomeNoCredit {
+		t.Fatalf("outcome = %q, want %q", result.Outcome, provider.RateLimitResetOutcomeNoCredit)
+	}
+	if resetProvider.resetCalls != 0 {
+		t.Fatalf("provider reset calls = %d, want 0", resetProvider.resetCalls)
+	}
+	if result.Account.Usage == nil || result.Account.Usage.SnapshotJSON == nil || *result.Account.Usage.SnapshotJSON != snapshotJSON {
+		t.Fatalf("result usage = %+v, want persisted no-credit snapshot", result.Account.Usage)
+	}
+}
+
 func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 	var logs bytes.Buffer
 	previousLogger := slog.Default()
@@ -109,4 +173,17 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 			t.Fatalf("log output leaked %q: %s", forbidden, logOutput)
 		}
 	}
+}
+
+type trackingRateLimitResetProvider struct {
+	provider.Provider
+	resetCalls int
+}
+
+func (tracking *trackingRateLimitResetProvider) ResetAccountRateLimit(_ context.Context, account entity.Account, _ string) (provider.RateLimitResetResult, error) {
+	tracking.resetCalls++
+	return provider.RateLimitResetResult{
+		Outcome: provider.RateLimitResetOutcomeReset,
+		Account: &account,
+	}, nil
 }

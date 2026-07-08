@@ -158,8 +158,32 @@ function positionTooltip(node, target) {
   const maxTop = window.innerHeight - tooltipRect.height - margin;
   const left = Math.max(margin, Math.min(rect.left + rect.width / 2 - tooltipRect.width / 2, maxLeft));
   const topCandidate = rect.top - tooltipRect.height - gap;
-  const preferredTop = topCandidate >= margin ? topCandidate : rect.bottom + gap;
+  const bottomCandidate = rect.bottom + gap;
+  const preferredTop =
+    topCandidate >= margin && !overlapsReservedControls(left, topCandidate, tooltipRect, target)
+      ? topCandidate
+      : bottomCandidate;
   const top = Math.max(margin, Math.min(preferredTop, maxTop));
   node.style.left = `${left}px`;
   node.style.top = `${top}px`;
+}
+
+function overlapsReservedControls(left, top, tooltipRect, target) {
+  const tooltipBox = {
+    left,
+    top,
+    right: left + tooltipRect.width,
+    bottom: top + tooltipRect.height,
+  };
+  return Array.from(document.querySelectorAll(".toolbar, .add-menu")).some((element) => {
+    if (element.contains(target)) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    return boxesOverlap(tooltipBox, rect);
+  });
+}
+
+function boxesOverlap(a, b) {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }

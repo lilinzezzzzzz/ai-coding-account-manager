@@ -19,6 +19,37 @@ export function promptAuthJSON(options = {}) {
   });
 }
 
+export function promptAuthJSONFile(options = {}) {
+  const input = document.createElement("input");
+  input.name = "authJsonFile";
+  input.type = "file";
+  input.accept = ".json,application/json";
+  return new Promise((resolve) => {
+    openFormDialog({
+      title: "导入 auth.json 文件",
+      detail: options.detail || "请选择不超过 2 MiB 的 JSON 文件。",
+      body: input,
+      submitText: "导入文件",
+      initialFocus: input,
+      validate: () => {
+        const file = input.files && input.files[0];
+        if (!file) {
+          return "请选择 JSON 文件";
+        }
+        if (file.size === 0) {
+          return "JSON 文件内容不能为空";
+        }
+        if (file.size > 2 * 1024 * 1024) {
+          return "JSON 文件不能超过 2 MiB";
+        }
+        return "";
+      },
+      onSubmit: () => resolve(input.files[0]),
+      onCancel: () => resolve(null),
+    });
+  });
+}
+
 export function promptTextDialog(options) {
   const input = document.createElement("input");
   input.name = options.fieldName;
@@ -121,6 +152,9 @@ function openFormDialog(options) {
   };
   cancelButton.addEventListener("click", () => close(true));
   dialog.addEventListener("cancel", (event) => {
+    if (event.target !== dialog) {
+      return;
+    }
     event.preventDefault();
     close(true);
   });

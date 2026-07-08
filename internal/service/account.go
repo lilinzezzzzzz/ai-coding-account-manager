@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -295,6 +296,26 @@ func (service *AccountService) ResetAccountRateLimit(ctx context.Context, provid
 	if err != nil {
 		return ResetRateLimitResult{}, err
 	}
+	usage, err := service.daos.UsageSnapshots.Get(ctx, providerID, accountID)
+	if err != nil {
+		if isAppErrorCode(err, entity.ErrorCodeNotFound) {
+			return ResetRateLimitResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "重置次数不可用，请先刷新账号状态")
+		}
+		return ResetRateLimitResult{}, err
+	}
+	availableCount, err := rateLimitResetCreditAvailableCount(usage)
+	if err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	if availableCount <= 0 {
+		return ResetRateLimitResult{
+			Outcome: provider.RateLimitResetOutcomeNoCredit,
+			Account: AccountWithUsage{
+				Account: account,
+				Usage:   &usage,
+			},
+		}, nil
+	}
 	providerResult, err := resetter.ResetAccountRateLimit(ctx, account, idempotencyKey)
 	if err != nil {
 		return ResetRateLimitResult{}, err
@@ -318,6 +339,21 @@ func (service *AccountService) ResetAccountRateLimit(ctx context.Context, provid
 			Usage:   &normalizedSnapshot,
 		},
 	}, nil
+}
+
+func rateLimitResetCreditAvailableCount(snapshot entity.UsageSnapshot) (int64, error) {
+	if snapshot.SnapshotJSON == nil || strings.TrimSpace(*snapshot.SnapshotJSON) == "" {
+		return 0, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "重置次数不可用，请先刷新账号状态")
+	}
+	var payload struct {
+		RateLimitResetCredits *struct {
+			AvailableCount int64 `json:"availableCount"`
+		} `json:"rateLimitResetCredits"`
+	}
+	if err := json.Unmarshal([]byte(*snapshot.SnapshotJSON), &payload); err != nil || payload.RateLimitResetCredits == nil {
+		return 0, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "重置次数不可用，请先刷新账号状态")
+	}
+	return payload.RateLimitResetCredits.AvailableCount, nil
 }
 
 func (service *AccountService) refreshOne(ctx context.Context, account entity.Account) RefreshResult {

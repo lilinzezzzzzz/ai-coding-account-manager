@@ -11,15 +11,21 @@
   <body>
     <main class="app-shell">
       <header class="topbar">
-        <div>
-          <h1>AI Coding Account Manager</h1>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">AI</div>
+          <div class="brand-copy">
+            <p class="brand-eyebrow">LOCAL CONTROL CENTER</p>
+            <h1>AI Coding Account Manager</h1>
+            <p class="brand-subtitle">集中管理本地 AI Coding 账号、凭据与使用额度</p>
+          </div>
         </div>
+        <div class="local-badge"><span aria-hidden="true"></span>本地管理</div>
       </header>
 
       <section id="message" class="message" role="status" aria-live="polite" hidden></section>
 
       <section id="providers" class="provider-list" aria-label="Providers"></section>
     </main>
-    <script type="module" src="/app.js?v=split-modules"></script>
+    <script type="module" src="/app.js?v=tooltip-position"></script>
   </body>
 </html>
