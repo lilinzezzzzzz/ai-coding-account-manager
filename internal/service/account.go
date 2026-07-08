@@ -370,6 +370,8 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 		return result
 	}
 
+	logRefreshStarted(ctx, account)
+
 	var refreshedAccount *entity.Account
 	var snapshot *entity.UsageSnapshot
 	if refresher, ok := registeredProvider.(AccountMetadataUsageRefresher); ok {
@@ -537,6 +539,14 @@ func errorMessagePtr(err error) *string {
 		return &message
 	}
 	return nil
+}
+
+func logRefreshStarted(ctx context.Context, account entity.Account) {
+	slog.InfoContext(ctx,
+		"account refresh started",
+		"provider_id", account.ProviderID,
+		"account_id", account.AccountID,
+	)
 }
 
 func logRefreshFailure(ctx context.Context, account entity.Account, code *entity.ErrorCode, err error) {

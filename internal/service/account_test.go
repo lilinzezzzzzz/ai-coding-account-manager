@@ -159,6 +159,7 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 
 	logOutput := logs.String()
 	for _, want := range []string{
+		"account refresh started",
 		"account refresh failed",
 		`"provider_id":"codex"`,
 		`"account_id":"acct-unsupported"`,
@@ -167,6 +168,11 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 		if !strings.Contains(logOutput, want) {
 			t.Fatalf("log output = %s, want %s", logOutput, want)
 		}
+	}
+	startedIndex := strings.Index(logOutput, "account refresh started")
+	failedIndex := strings.Index(logOutput, "account refresh failed")
+	if startedIndex < 0 || failedIndex < 0 || startedIndex > failedIndex {
+		t.Fatalf("log output = %s, want refresh started before refresh failed", logOutput)
 	}
 	for _, forbidden := range []string{"access_token", "refresh_token", "auth.json"} {
 		if strings.Contains(logOutput, forbidden) {
