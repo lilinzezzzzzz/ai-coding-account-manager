@@ -219,22 +219,57 @@ running_pid() {
   printf '%s\n' "${pid}"
 }
 
+listener_pid_for_port() {
+  local port="$1"
+  local pid=""
+
+  if command -v lsof >/dev/null 2>&1; then
+    pid="$(lsof -nP -t -iTCP:"${port}" -sTCP:LISTEN 2>/dev/null | sed -n '1p')"
+  fi
+
+  if [[ -z "${pid}" ]] && command -v ss >/dev/null 2>&1; then
+    pid="$(ss -H -tlnp "sport = :${port}" 2>/dev/null | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | sed -n '1p')"
+  fi
+
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "${pid}"
+}
+
+process_command_line() {
+  local pid="$1"
+  local cmdline
+
+  if [[ -r "/proc/${pid}/cmdline" ]]; then
+    tr '\0' ' ' <"/proc/${pid}/cmdline"
+    return 0
+  fi
+
+  cmdline="$(ps -p "${pid}" -o command= 2>/dev/null || true)"
+  if [[ -n "${cmdline}" ]]; then
+    printf '%s\n' "${cmdline}"
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -p "${pid}" -Fn 2>/dev/null | tr '\n' ' ' || true
+  fi
+}
+
 # Find an orphaned process listening on the given port.
 # Returns 0 with the PID on stdout if found, 1 otherwise.
 find_orphan_pid() {
   local port="$1"
   local pid
 
-  # Use ss to find the PID listening on this port
-  pid="$(ss -tlnp "sport = :${port}" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1)"
-
-  if [[ -z "${pid}" ]]; then
+  if ! pid="$(listener_pid_for_port "${port}")"; then
     return 1
   fi
 
-  # Check if the process is our binary
   local cmdline
-  cmdline="$(cat /proc/${pid}/cmdline 2>/dev/null | tr '\0' ' ' || true)"
+  cmdline="$(process_command_line "${pid}")"
   if [[ "${cmdline}" == *"ai-coding-account-manager"* ]]; then
     printf '%s\n' "${pid}"
     return 0
@@ -470,7 +505,7 @@ show_status() {
     log_warn "${APP_NAME} is running (orphaned, no PID file)"
     log_kv "pid" "${orphan_pid}"
     log_kv "log file" "${LOG_FILE}"
-    log_kv "to fix" "kill ${orphan_pid} && ./scripts/local.sh start"
+    log_kv "to fix" "./scripts/local.sh restart"
     return 0
   fi
 
