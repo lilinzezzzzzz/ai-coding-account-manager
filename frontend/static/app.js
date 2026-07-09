@@ -261,8 +261,8 @@ async function updatePlanExpiration(account) {
 async function activateAccount(account) {
   const confirmed = await confirmDialog({
     title: "激活账号",
-    detail: `${account.label || account.email || account.accountId}\n切换后需要 reload VS Code 窗口。`,
-    confirmText: "激活",
+    detail: `账号：${account.label || account.email || account.accountId}\n激活后请 reload VS Code 窗口使配置生效。`,
+    confirmText: "确认",
   });
   if (!confirmed) {
     return;
