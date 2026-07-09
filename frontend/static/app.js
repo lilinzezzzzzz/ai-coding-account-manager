@@ -272,7 +272,7 @@ async function activateAccount(account) {
       method: "POST",
       body: {},
     });
-    showMessage("账号已切换。请在 VS Code 执行 Developer: Reload Window。");
+    showMessage("账号已切换");
     await loadData();
   });
 }
