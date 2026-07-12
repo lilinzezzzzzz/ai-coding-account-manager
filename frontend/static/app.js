@@ -105,12 +105,16 @@ async function submitProviderAuthJSON(providerId, authJson) {
   });
 }
 
-async function createLoginTask(providerId) {
+async function createLoginTask(providerId, expectedEmail = "") {
   setLoading(true);
   try {
+    const body = { mode: "browser" };
+    if (expectedEmail) {
+      body.expectedEmail = expectedEmail;
+    }
     const task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/create`, {
       method: "POST",
-      body: { mode: "browser" },
+      body,
     });
     state.loginTasks.set(task.taskId, task);
     showLoginTaskMessage(task);
@@ -139,6 +143,12 @@ async function pollLoginTask(providerId, taskId) {
     showLoginTaskMessage(task);
     if (task.status === "imported") {
       await loadData();
+      const account = task.account
+        ? state.accounts.find((item) => item.providerId === providerId && item.accountId === task.account.accountId)
+        : null;
+      if (account) {
+        await refreshAccount(account, { promptRelogin: false });
+      }
       return;
     }
     if (["failed", "cancelled", "expired"].includes(task.status)) {
@@ -147,7 +157,8 @@ async function pollLoginTask(providerId, taskId) {
   }
 }
 
-async function refreshAccount(account) {
+async function refreshAccount(account, options = {}) {
+  const promptRelogin = options.promptRelogin !== false;
   const key = accountKey(account);
   if (state.loading || state.refreshingAccountKeys.has(key)) {
     return;
@@ -166,6 +177,18 @@ async function refreshAccount(account) {
     replaceAccount(result.account);
     showMessage("账号状态已刷新");
   } catch (error) {
+    if (promptRelogin && account.providerId === "codex" && error.code === "token_invalidated") {
+      hideMessage();
+      const confirmed = await confirmDialog({
+        title: "登录态已失效",
+        detail: `${account.label || account.email || account.accountId}\n此账号的 OpenAI/Codex 登录凭据已失效。重新登录后将更新该账号的本地凭据。`,
+        confirmText: "重新登录",
+      });
+      if (confirmed) {
+        await createLoginTask(account.providerId, account.email || "");
+      }
+      return;
+    }
     showMessage(error.message || "账号状态刷新失败", true);
   } finally {
     state.refreshingAccountKeys.delete(key);

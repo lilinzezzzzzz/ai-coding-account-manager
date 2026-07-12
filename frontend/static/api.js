@@ -20,7 +20,9 @@ export async function api(path, options) {
   if (envelope.data && envelope.data.errorCode && !options.allowDataErrorCode) {
     const errorCode = envelope.data.errorCode;
     const errorMessage = envelope.data.errorMessage || getErrorMessage(errorCode);
-    throw new Error(errorMessage);
+    const error = new Error(errorMessage);
+    error.code = errorCode;
+    throw error;
   }
   return envelope.data;
 }
