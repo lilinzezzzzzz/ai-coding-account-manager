@@ -17,6 +17,33 @@ import (
 
 const maxCapturedStderrBytes = 16 * 1024
 
+const maxUpstreamErrorFieldRunes = 512
+
+// UpstreamError 保存 app-server 转发的上游 HTTP 错误详情。
+type UpstreamError struct {
+	Code    string
+	Message string
+}
+
+type rpcCallError struct {
+	method   string
+	message  string
+	upstream *UpstreamError
+}
+
+func (err *rpcCallError) Error() string {
+	return fmt.Sprintf("app-server %s: %s", err.method, err.message)
+}
+
+// UpstreamErrorFrom 返回错误中可安全展示的上游错误详情。
+func UpstreamErrorFrom(err error) (UpstreamError, bool) {
+	var callErr *rpcCallError
+	if !errors.As(err, &callErr) || callErr.upstream == nil {
+		return UpstreamError{}, false
+	}
+	return *callErr.upstream, true
+}
+
 // Client 是 Codex app-server JSON-RPC client。
 type Client struct {
 	cmd         *exec.Cmd
@@ -138,7 +165,7 @@ func (client *Client) Call(ctx context.Context, method string, params any, resul
 			continue
 		}
 		if message.Error != nil {
-			return fmt.Errorf("app-server %s: %s", method, message.Error.Message)
+			return newRPCCallError(method, message.Error.Message)
 		}
 		if result == nil {
 			return nil
@@ -151,6 +178,50 @@ func (client *Client) Call(ctx context.Context, method string, params any, resul
 		}
 		return nil
 	}
+}
+
+func newRPCCallError(method string, message string) error {
+	return &rpcCallError{
+		method:   method,
+		message:  message,
+		upstream: upstreamErrorFromMessage(message),
+	}
+}
+
+func upstreamErrorFromMessage(message string) *UpstreamError {
+	_, body, found := strings.Cut(message, "body=")
+	if !found {
+		return nil
+	}
+	start := strings.IndexByte(body, '{')
+	if start < 0 {
+		return nil
+	}
+	var payload struct {
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	decoder := json.NewDecoder(strings.NewReader(body[start:]))
+	if err := decoder.Decode(&payload); err != nil || payload.Error == nil {
+		return nil
+	}
+	code := limitUpstreamErrorField(payload.Error.Code)
+	message = limitUpstreamErrorField(payload.Error.Message)
+	if code == "" || message == "" {
+		return nil
+	}
+	return &UpstreamError{Code: code, Message: message}
+}
+
+func limitUpstreamErrorField(value string) string {
+	value = strings.TrimSpace(value)
+	runes := []rune(value)
+	if len(runes) > maxUpstreamErrorFieldRunes {
+		return string(runes[:maxUpstreamErrorFieldRunes])
+	}
+	return value
 }
 
 // Notify 发送 JSON-RPC notification。

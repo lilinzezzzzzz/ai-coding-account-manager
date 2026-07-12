@@ -145,7 +145,7 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RefreshAccount() error = %v", err)
 	}
-	if result.ErrorCode == nil || *result.ErrorCode != entity.ErrorCodeUnsupported {
+	if result.ErrorCode == nil || *result.ErrorCode != string(entity.ErrorCodeUnsupported) {
 		t.Fatalf("error code = %v, want unsupported", result.ErrorCode)
 	}
 
@@ -178,6 +178,24 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 		if strings.Contains(logOutput, forbidden) {
 			t.Fatalf("log output leaked %q: %s", forbidden, logOutput)
 		}
+	}
+}
+
+func TestResponseErrorCodePrefersUpstreamCode(t *testing.T) {
+	err := entity.WrapAppErrorWithUpstreamError(
+		entity.ErrorCodeUnavailable,
+		"token_invalidated",
+		"Your authentication token has been invalidated. Please try signing in again.",
+		nil,
+	)
+
+	code := responseErrorCodePtr(err)
+	if code == nil || *code != "token_invalidated" {
+		t.Fatalf("response error code = %v, want token_invalidated", code)
+	}
+	message := errorMessagePtr(err)
+	if message == nil || *message != "Your authentication token has been invalidated. Please try signing in again." {
+		t.Fatalf("response error message = %v", message)
 	}
 }
 

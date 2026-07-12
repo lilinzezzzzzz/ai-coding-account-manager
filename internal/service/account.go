@@ -27,7 +27,7 @@ type RefreshResult struct {
 	ProviderID   string
 	AccountID    string
 	Account      *AccountWithUsage
-	ErrorCode    *entity.ErrorCode
+	ErrorCode    *string
 	ErrorMessage *string
 }
 
@@ -363,10 +363,11 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 	}
 	registeredProvider, err := service.getProvider(account.ProviderID)
 	if err != nil {
-		result.ErrorCode = errorCodePtr(err)
+		result.ErrorCode = responseErrorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(ctx, account, result.ErrorCode, err)
-		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
+		code := errorCodePtr(err)
+		logRefreshFailure(ctx, account, code, err)
+		_ = service.persistFailedUsage(ctx, account, code)
 		return result
 	}
 
@@ -380,25 +381,27 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 		snapshot, err = registeredProvider.RefreshAccount(ctx, account)
 	}
 	if err != nil {
-		result.ErrorCode = errorCodePtr(err)
+		result.ErrorCode = responseErrorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(ctx, account, result.ErrorCode, err)
-		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
+		code := errorCodePtr(err)
+		logRefreshFailure(ctx, account, code, err)
+		_ = service.persistFailedUsage(ctx, account, code)
 		return result
 	}
 	if err := validateRefreshedAccount(account, refreshedAccount); err != nil {
-		result.ErrorCode = errorCodePtr(err)
+		result.ErrorCode = responseErrorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(ctx, account, result.ErrorCode, err)
-		_ = service.persistFailedUsage(ctx, account, result.ErrorCode)
+		code := errorCodePtr(err)
+		logRefreshFailure(ctx, account, code, err)
+		_ = service.persistFailedUsage(ctx, account, code)
 		return result
 	}
 	normalizedSnapshot := normalizeUsageSnapshot(account, *snapshot)
 	refreshedViewAccount := mergeRefreshedAccount(account, refreshedAccount, service.now().UTC().UnixMilli())
 	if err := service.persistRefreshSuccess(ctx, account, refreshedAccount, normalizedSnapshot, refreshedViewAccount.UpdatedAt); err != nil {
-		result.ErrorCode = errorCodePtr(err)
+		result.ErrorCode = responseErrorCodePtr(err)
 		result.ErrorMessage = errorMessagePtr(err)
-		logRefreshFailure(ctx, account, result.ErrorCode, err)
+		logRefreshFailure(ctx, account, errorCodePtr(err), err)
 		return result
 	}
 	result.Account = &AccountWithUsage{
@@ -525,6 +528,15 @@ func errorCodePtr(err error) *entity.ErrorCode {
 	if appErr, ok := entity.AsAppError(err); ok {
 		code = appErr.ErrorCode()
 	}
+	return &code
+}
+
+func responseErrorCodePtr(err error) *string {
+	if appErr, ok := entity.AsAppError(err); ok && appErr.UpstreamCode != "" {
+		code := appErr.UpstreamCode
+		return &code
+	}
+	code := string(*errorCodePtr(err))
 	return &code
 }
 

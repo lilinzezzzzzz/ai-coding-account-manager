@@ -72,9 +72,10 @@ func (code ErrorCode) DefaultMessage() string {
 
 // AppError 保存跨 service、dao 和 controller 传递的稳定业务错误。
 type AppError struct {
-	Code    ErrorCode
-	Message string
-	Cause   error
+	Code         ErrorCode
+	Message      string
+	UpstreamCode string
+	Cause        error
 }
 
 // NewAppError 使用 ErrorCode 的默认文案创建业务错误。
@@ -95,6 +96,19 @@ func WrapAppError(code ErrorCode, cause error) *AppError {
 // WrapAppErrorWithMessage 使用指定文案包装底层 cause。
 func WrapAppErrorWithMessage(code ErrorCode, message string, cause error) *AppError {
 	return &AppError{Code: code, Message: message, Cause: cause}
+}
+
+// WrapAppErrorWithUpstreamError 使用上游错误详情包装稳定业务错误码。
+//
+// UpstreamCode 仅用于向调用方展示上游的稳定错误标识；Code 仍用于本地
+// 状态持久化、日志分类和 HTTP status 映射。
+func WrapAppErrorWithUpstreamError(code ErrorCode, upstreamCode string, message string, cause error) *AppError {
+	return &AppError{
+		Code:         code,
+		Message:      message,
+		UpstreamCode: upstreamCode,
+		Cause:        cause,
+	}
 }
 
 // ErrorCode 返回对外稳定错误码。

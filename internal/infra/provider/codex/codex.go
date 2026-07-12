@@ -384,6 +384,9 @@ func mapAppServerError(message string, err error) error {
 	if err == nil {
 		return nil
 	}
+	if upstream, ok := appserver.UpstreamErrorFrom(err); ok {
+		return entity.WrapAppErrorWithUpstreamError(entity.ErrorCodeUnavailable, upstream.Code, upstream.Message, err)
+	}
 	return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, message, err)
 }
 

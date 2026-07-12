@@ -68,6 +68,41 @@ func TestClientReturnsRPCError(t *testing.T) {
 	}
 }
 
+func TestClientExtractsUpstreamErrorFromRPCError(t *testing.T) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatalf("resolve test executable: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	client, err := Start(ctx, Config{
+		Bin: executable,
+		Env: []string{"AICAM_FAKE_APPSERVER=1"},
+	})
+	if err != nil {
+		t.Fatalf("start client: %v", err)
+	}
+	defer func() {
+		_ = client.Close(context.Background())
+	}()
+
+	err = client.Call(ctx, "test/upstream-error", nil, nil)
+	if err == nil {
+		t.Fatal("call error succeeded, want error")
+	}
+	upstream, ok := UpstreamErrorFrom(err)
+	if !ok {
+		t.Fatalf("UpstreamErrorFrom(%v) = false, want true", err)
+	}
+	if upstream.Code != "token_invalidated" {
+		t.Fatalf("upstream code = %q, want token_invalidated", upstream.Code)
+	}
+	if upstream.Message != "Your authentication token has been invalidated. Please try signing in again." {
+		t.Fatalf("upstream message = %q", upstream.Message)
+	}
+}
+
 func TestStartUsesTemporarySQLiteHomeForCodexHome(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {
@@ -183,6 +218,14 @@ func runFakeAppServer(mode string) {
 				"error": map[string]any{
 					"code":    -32601,
 					"message": "method missing",
+				},
+			})
+		case "test/upstream-error":
+			_ = encoder.Encode(map[string]any{
+				"id": id,
+				"error": map[string]any{
+					"code":    -32000,
+					"message": "GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized; body={\n  \"error\": {\n    \"message\": \"Your authentication token has been invalidated. Please try signing in again.\",\n    \"code\": \"token_invalidated\"\n  },\n  \"status\": 401\n} *errors.errorString",
 				},
 			})
 		default:

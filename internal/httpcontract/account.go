@@ -129,11 +129,11 @@ type ResetRateLimitResponse struct {
 
 // RefreshResultResponse 是单账号状态刷新结果的 HTTP response。
 type RefreshResultResponse struct {
-	ProviderID   string            `json:"providerId"`
-	AccountID    string            `json:"accountId"`
-	Account      *AccountResponse  `json:"account"`
-	ErrorCode    *entity.ErrorCode `json:"errorCode"`
-	ErrorMessage *string           `json:"errorMessage"`
+	ProviderID   string           `json:"providerId"`
+	AccountID    string           `json:"accountId"`
+	Account      *AccountResponse `json:"account"`
+	ErrorCode    *string          `json:"errorCode"`
+	ErrorMessage *string          `json:"errorMessage"`
 }
 
 // AccountViewResponse 将 service 账号视图转换为 HTTP response。
