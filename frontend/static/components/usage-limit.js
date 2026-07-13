@@ -66,16 +66,27 @@ function usageLimitItems(usage) {
   }
   const snapshot = parseSnapshot(usage.snapshotJson);
   const rateLimits = snapshot && snapshot.rateLimits ? snapshot.rateLimits : null;
-  if (rateLimits) {
-    return [
-      limitItem("5 小时限额", rateLimits.primary),
-      limitItem("7 天限额", rateLimits.secondary),
-    ].filter(Boolean);
+  if (!rateLimits) {
+    return [];
   }
-  if (typeof usage.usedPercent === "number") {
-    return [limitItem("5 小时限额", { usedPercent: usage.usedPercent, resetsAt: usage.resetsAt })].filter(Boolean);
+  return [
+    limitItem(rateLimitLabel(rateLimits.primary), rateLimits.primary),
+    limitItem(rateLimitLabel(rateLimits.secondary), rateLimits.secondary),
+  ].filter(Boolean);
+}
+
+function rateLimitLabel(limit) {
+  const durationMins = limit && Math.trunc(limit.windowDurationMins);
+  if (durationMins === 7 * 24 * 60) {
+    return "7 天限额";
   }
-  return [];
+  if (durationMins === 5 * 60) {
+    return "5 小时限额";
+  }
+  if (durationMins > 0 && durationMins % 60 === 0) {
+    return `${durationMins / 60} 小时限额`;
+  }
+  return durationMins > 0 ? `${durationMins} 分钟限额` : "额度限额";
 }
 
 function limitItem(label, limit) {

@@ -38,8 +38,9 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 			RateLimitResetCredits: &rateLimitResetCreditsSummary{AvailableCount: 2},
 			RateLimits: rateLimitSnapshot{
 				Primary: &rateLimitWindow{
-					UsedPercent: floatPtr(42.5),
-					ResetsAt:    int64Ptr(1700000000000),
+					UsedPercent:        floatPtr(42.5),
+					ResetsAt:           int64Ptr(1700000000000),
+					WindowDurationMins: int64Ptr(7 * 24 * 60),
 				},
 				PlanType: stringPtr("plus"),
 			},
@@ -72,6 +73,12 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	}
 	if snapshotPayload.RateLimitResetCredits == nil || snapshotPayload.RateLimitResetCredits.AvailableCount != 2 {
 		t.Fatalf("reset credits = %#v, want available count 2", snapshotPayload.RateLimitResetCredits)
+	}
+	if snapshotPayload.RateLimits.Primary == nil || snapshotPayload.RateLimits.Primary.WindowDurationMins == nil || *snapshotPayload.RateLimits.Primary.WindowDurationMins != 7*24*60 {
+		t.Fatalf("primary window duration = %#v, want 10080 minutes", snapshotPayload.RateLimits.Primary)
+	}
+	if snapshotPayload.RateLimits.Secondary != nil {
+		t.Fatalf("secondary limit = %#v, want nil", snapshotPayload.RateLimits.Secondary)
 	}
 
 	writeAuthFile(t, activeDir, `{"tokens":{"access_token":"old"}}`)
