@@ -310,6 +310,42 @@ func TestProviderAcceptsAccountWhenOpenAIAuthStillRequired(t *testing.T) {
 	}
 }
 
+func TestMapAccountRequiresReauthenticationWhenAccountIsMissing(t *testing.T) {
+	_, err := mapAccount(accountReadResponse{RequiresOpenaiAuth: true})
+	if err == nil {
+		t.Fatal("mapAccount() error = nil, want reauthentication required")
+	}
+	appErr, ok := entity.AsAppError(err)
+	if !ok || appErr.ErrorCode() != entity.ErrorCodeReauthenticationRequired {
+		t.Fatalf("mapAccount() error = %v, want %s", err, entity.ErrorCodeReauthenticationRequired)
+	}
+}
+
+func TestReauthenticationRequiredUpstreamCodes(t *testing.T) {
+	tests := []struct {
+		code string
+		want bool
+	}{
+		{code: "token_invalidated", want: true},
+		{code: "token_revoked", want: true},
+		{code: "refresh_token_expired", want: true},
+		{code: "refresh_token_reused", want: true},
+		{code: "refresh_token_invalidated", want: true},
+		{code: " TOKEN_REVOKED ", want: true},
+		{code: "invalid_grant", want: false},
+		{code: "rate_limit_exceeded", want: false},
+		{code: "", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.code, func(t *testing.T) {
+			if got := isReauthenticationRequiredUpstreamCode(test.code); got != test.want {
+				t.Fatalf("isReauthenticationRequiredUpstreamCode(%q) = %t, want %t", test.code, got, test.want)
+			}
+		})
+	}
+}
+
 type fakeCodexClient struct {
 	responses map[string]any
 	calls     []fakeCodexCall

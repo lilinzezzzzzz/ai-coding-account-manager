@@ -1,4 +1,4 @@
-import { api, getErrorMessage } from "./api.js?v=split-modules";
+import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeAddMenus } from "./components/add-menu.js?v=components";
 import { emptyState } from "./components/common.js?v=components";
 import { providerSection } from "./components/provider-section.js?v=components";
@@ -27,6 +27,14 @@ const state = {
 
 const messageAutoHideMs = 4200;
 const errorMessageAutoHideMs = 7000;
+const codexReloginErrorCodes = new Set([
+  "REAUTHENTICATION_REQUIRED",
+  "token_invalidated",
+  "token_revoked",
+  "refresh_token_expired",
+  "refresh_token_reused",
+  "refresh_token_invalidated",
+]);
 let messageHideTimer = 0;
 
 const elements = {
@@ -177,16 +185,7 @@ async function refreshAccount(account, options = {}) {
     replaceAccount(result.account);
     showMessage("账号状态已刷新");
   } catch (error) {
-    if (promptRelogin && account.providerId === "codex" && error.code === "token_invalidated") {
-      hideMessage();
-      const confirmed = await confirmDialog({
-        title: "登录态已失效",
-        detail: `${account.label || account.email || account.accountId}\n此账号的 OpenAI/Codex 登录凭据已失效。重新登录后将更新该账号的本地凭据。`,
-        confirmText: "重新登录",
-      });
-      if (confirmed) {
-        await createLoginTask(account.providerId, account.email || "");
-      }
+    if (promptRelogin && await promptAccountRelogin(account, error)) {
       return;
     }
     showMessage(error.message || "账号状态刷新失败", true);
@@ -221,11 +220,30 @@ async function resetAccountRateLimit(account) {
     replaceAccount(result.account);
     showMessage(resetOutcomeMessage(result.outcome));
   } catch (error) {
+    if (await promptAccountRelogin(account, error)) {
+      return;
+    }
     showMessage(error.message || "额度重置失败", true);
   } finally {
     state.resettingAccountKeys.delete(key);
     render();
   }
+}
+
+async function promptAccountRelogin(account, error) {
+  if (account.providerId !== "codex" || !codexReloginErrorCodes.has(error.code)) {
+    return false;
+  }
+  hideMessage();
+  const confirmed = await confirmDialog({
+    title: "登录态已失效",
+    detail: `${account.label || account.email || account.accountId}\n此账号的 OpenAI/Codex 登录凭据已失效。重新登录后将更新该账号的本地凭据。`,
+    confirmText: "重新登录",
+  });
+  if (confirmed) {
+    await createLoginTask(account.providerId, account.email || "");
+  }
+  return true;
 }
 
 function resetConfirmationDetail(availableCount) {

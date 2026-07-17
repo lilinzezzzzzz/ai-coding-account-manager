@@ -103,6 +103,27 @@ func TestClientExtractsUpstreamErrorFromRPCError(t *testing.T) {
 	}
 }
 
+func TestUpstreamErrorFromMessageExtractsTokenRevoked(t *testing.T) {
+	message := `GET https://chatgpt.com/backend-api/wham/usage failed: 401 Unauthorized; body={
+  "error": {
+    "message": "Encountered invalidated oauth token for user, failing request",
+    "code": "token_revoked"
+  },
+  "status": 401
+} *errors.errorString`
+
+	upstream := upstreamErrorFromMessage(message)
+	if upstream == nil {
+		t.Fatal("upstream error is nil")
+	}
+	if upstream.Code != "token_revoked" {
+		t.Fatalf("upstream code = %q, want token_revoked", upstream.Code)
+	}
+	if upstream.Message != "Encountered invalidated oauth token for user, failing request" {
+		t.Fatalf("upstream message = %q", upstream.Message)
+	}
+}
+
 func TestStartUsesTemporarySQLiteHomeForCodexHome(t *testing.T) {
 	executable, err := os.Executable()
 	if err != nil {

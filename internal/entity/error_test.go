@@ -27,3 +27,14 @@ func TestAppErrorAllowsMessageOverride(t *testing.T) {
 		t.Fatalf("DisplayMessage() = %q, want 接口不存在", err.DisplayMessage())
 	}
 }
+
+func TestReauthenticationRequiredUsesStableDefaultMessage(t *testing.T) {
+	err := entity.NewAppError(entity.ErrorCodeReauthenticationRequired)
+
+	if err.ErrorCode() != entity.ErrorCodeReauthenticationRequired {
+		t.Fatalf("ErrorCode() = %q, want %q", err.ErrorCode(), entity.ErrorCodeReauthenticationRequired)
+	}
+	if err.DisplayMessage() != "登录态已失效，请重新登录" {
+		t.Fatalf("DisplayMessage() = %q, want 登录态已失效，请重新登录", err.DisplayMessage())
+	}
+}

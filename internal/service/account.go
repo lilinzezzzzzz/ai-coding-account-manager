@@ -318,6 +318,9 @@ func (service *AccountService) ResetAccountRateLimit(ctx context.Context, provid
 	}
 	providerResult, err := resetter.ResetAccountRateLimit(ctx, account, idempotencyKey)
 	if err != nil {
+		if isAppErrorCode(err, entity.ErrorCodeReauthenticationRequired) {
+			_ = service.persistFailedUsage(ctx, account, errorCodePtr(err))
+		}
 		return ResetRateLimitResult{}, err
 	}
 	if err := validateRefreshedAccount(account, providerResult.Account); err != nil {
@@ -412,10 +415,14 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 }
 
 func (service *AccountService) persistFailedUsage(ctx context.Context, account entity.Account, code *entity.ErrorCode) error {
+	status := entity.UsageStatusUnavailable
+	if code != nil && *code == entity.ErrorCodeReauthenticationRequired {
+		status = entity.UsageStatusAuthExpired
+	}
 	snapshot := entity.UsageSnapshot{
 		ProviderID:  account.ProviderID,
 		AccountID:   account.AccountID,
-		Status:      entity.UsageStatusUnavailable,
+		Status:      status,
 		ErrorCode:   code,
 		RefreshedAt: service.now().UTC().UnixMilli(),
 	}
@@ -532,9 +539,15 @@ func errorCodePtr(err error) *entity.ErrorCode {
 }
 
 func responseErrorCodePtr(err error) *string {
-	if appErr, ok := entity.AsAppError(err); ok && appErr.UpstreamCode != "" {
-		code := appErr.UpstreamCode
-		return &code
+	if appErr, ok := entity.AsAppError(err); ok {
+		if appErr.ErrorCode() == entity.ErrorCodeReauthenticationRequired {
+			code := string(entity.ErrorCodeReauthenticationRequired)
+			return &code
+		}
+		if appErr.UpstreamCode != "" {
+			code := appErr.UpstreamCode
+			return &code
+		}
 	}
 	code := string(*errorCodePtr(err))
 	return &code
@@ -570,8 +583,13 @@ func logRefreshFailure(ctx context.Context, account entity.Account, code *entity
 	if code != nil {
 		fields = append(fields, "error_code", *code)
 	}
-	if appErr, ok := entity.AsAppError(err); ok && appErr.Cause != nil {
-		fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
+	if appErr, ok := entity.AsAppError(err); ok {
+		if appErr.UpstreamCode != "" {
+			fields = append(fields, "upstream_error_code", appErr.UpstreamCode)
+		}
+		if appErr.Cause != nil {
+			fields = append(fields, "cause", appErr.Cause, "cause_type", fmt.Sprintf("%T", appErr.Cause))
+		}
 	}
 	slog.WarnContext(ctx, "account refresh failed", fields...)
 }

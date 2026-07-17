@@ -22,6 +22,8 @@ const (
 	ErrorCodeUnsupported ErrorCode = "UNSUPPORTED"
 	// ErrorCodeUnavailable 表示 provider 或依赖当前不可用。
 	ErrorCodeUnavailable ErrorCode = "UNAVAILABLE"
+	// ErrorCodeReauthenticationRequired 表示账号凭据已无法自动恢复，需要重新登录。
+	ErrorCodeReauthenticationRequired ErrorCode = "REAUTHENTICATION_REQUIRED"
 	// ErrorCodeConflict 表示请求与当前资源状态冲突。
 	ErrorCodeConflict ErrorCode = "CONFLICT"
 	// ErrorCodeOperationInProgress 表示同类互斥操作正在执行。
@@ -55,6 +57,8 @@ func (code ErrorCode) DefaultMessage() string {
 		return "当前操作不支持"
 	case ErrorCodeUnavailable:
 		return "服务暂时不可用"
+	case ErrorCodeReauthenticationRequired:
+		return "登录态已失效，请重新登录"
 	case ErrorCodeConflict:
 		return "资源状态冲突"
 	case ErrorCodeOperationInProgress:

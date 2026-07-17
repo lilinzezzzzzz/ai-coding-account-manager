@@ -328,6 +328,9 @@ func (providerImpl *Provider) readAccount(ctx context.Context, client appServerC
 
 func mapAccount(response accountReadResponse) (*entity.Account, error) {
 	if response.Account == nil {
+		if response.RequiresOpenaiAuth {
+			return nil, entity.NewAppError(entity.ErrorCodeReauthenticationRequired)
+		}
 		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "Codex 账号未登录")
 	}
 	if response.Account.Type != "chatgpt" {
@@ -385,9 +388,26 @@ func mapAppServerError(message string, err error) error {
 		return nil
 	}
 	if upstream, ok := appserver.UpstreamErrorFrom(err); ok {
-		return entity.WrapAppErrorWithUpstreamError(entity.ErrorCodeUnavailable, upstream.Code, upstream.Message, err)
+		code := entity.ErrorCodeUnavailable
+		if isReauthenticationRequiredUpstreamCode(upstream.Code) {
+			code = entity.ErrorCodeReauthenticationRequired
+		}
+		return entity.WrapAppErrorWithUpstreamError(code, upstream.Code, upstream.Message, err)
 	}
 	return entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, message, err)
+}
+
+func isReauthenticationRequiredUpstreamCode(code string) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "token_invalidated",
+		"token_revoked",
+		"refresh_token_expired",
+		"refresh_token_reused",
+		"refresh_token_invalidated":
+		return true
+	default:
+		return false
+	}
 }
 
 type accountReadParams struct {

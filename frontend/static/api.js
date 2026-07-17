@@ -14,7 +14,9 @@ export async function api(path, options) {
   const response = await fetch(path, init);
   const envelope = await response.json();
   if (!response.ok || envelope.code !== successCode) {
-    throw new Error(envelope.message || `HTTP ${response.status}`);
+    const error = new Error(envelope.message || `HTTP ${response.status}`);
+    error.code = envelope.code;
+    throw error;
   }
   // 检查业务级别的错误码
   if (envelope.data && envelope.data.errorCode && !options.allowDataErrorCode) {
@@ -37,6 +39,7 @@ export function getErrorMessage(errorCode) {
     METHOD_NOT_ALLOWED: "请求方法不支持",
     UNSUPPORTED: "当前操作不支持",
     UNAVAILABLE: "服务暂时不可用",
+    REAUTHENTICATION_REQUIRED: "登录态已失效，请重新登录",
     CONFLICT: "资源状态冲突",
     OPERATION_IN_PROGRESS: "操作正在进行中",
     STORAGE_BUSY: "数据库暂时繁忙，请稍后重试",

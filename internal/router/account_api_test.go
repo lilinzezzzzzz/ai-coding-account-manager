@@ -133,6 +133,35 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	}
 }
 
+func TestAccountAPIRefreshReturnsStableReauthenticationCode(t *testing.T) {
+	refreshErr := entity.WrapAppErrorWithUpstreamError(
+		entity.ErrorCodeReauthenticationRequired,
+		"token_revoked",
+		"Encountered invalidated oauth token for user, failing request",
+		nil,
+	)
+	handler, cleanup := newAccountAPIHandlerWithRefreshError(t, refreshErr)
+	defer cleanup()
+
+	response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/refresh", `{}`)
+	if response.Code != http.StatusOK {
+		t.Fatalf("refresh status = %d, body = %s", response.Code, response.Body.String())
+	}
+	body := response.Body.String()
+	if !strings.Contains(body, `"errorCode":"REAUTHENTICATION_REQUIRED"`) || strings.Contains(body, `"errorCode":"token_revoked"`) {
+		t.Fatalf("refresh body = %s, want stable reauthentication code", body)
+	}
+
+	listResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if listResponse.Code != http.StatusOK {
+		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
+	}
+	listBody := listResponse.Body.String()
+	if !strings.Contains(listBody, `"status":"auth_expired"`) || !strings.Contains(listBody, `"errorCode":"REAUTHENTICATION_REQUIRED"`) {
+		t.Fatalf("list body = %s, want persisted auth_expired state", listBody)
+	}
+}
+
 func TestAccountAPICreateManualAccountAndRefreshOne(t *testing.T) {
 	handler, cleanup := newAccountAPIHandler(t)
 	defer cleanup()
@@ -304,6 +333,10 @@ func TestAccountAPIMutationRejectsMissingOrigin(t *testing.T) {
 }
 
 func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
+	return newAccountAPIHandlerWithRefreshError(t, nil)
+}
+
+func newAccountAPIHandlerWithRefreshError(t *testing.T, refreshErr error) (http.Handler, func()) {
 	t.Helper()
 
 	securityManager, err := security.NewManager(security.Config{
@@ -333,7 +366,11 @@ func newAccountAPIHandler(t *testing.T) (http.Handler, func()) {
 			{Account: fakeAcct2, Usage: testAPIUsage("acct-2", entity.UsageStatusReady)},
 		},
 	})
-	if err := providerRegistry.Register(context.Background(), fakeProvider); err != nil {
+	var registeredProvider provider.Provider = fakeProvider
+	if refreshErr != nil {
+		registeredProvider = &testFailingMetadataRefreshProvider{Provider: fakeProvider, err: refreshErr}
+	}
+	if err := providerRegistry.Register(context.Background(), registeredProvider); err != nil {
 		t.Fatalf("Register() error = %v", err)
 	}
 	activeAccount := testAPIAccount("acct-1")
@@ -445,6 +482,15 @@ type testRuntimeValidator struct{}
 
 func (testRuntimeValidator) Validate(context.Context, string) error {
 	return nil
+}
+
+type testFailingMetadataRefreshProvider struct {
+	provider.Provider
+	err error
+}
+
+func (failing *testFailingMetadataRefreshProvider) RefreshAccountWithMetadata(context.Context, entity.Account) (*entity.Account, *entity.UsageSnapshot, error) {
+	return nil, nil, failing.err
 }
 
 type testLoginRunner struct{}
