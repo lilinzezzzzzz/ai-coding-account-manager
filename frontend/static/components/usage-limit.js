@@ -45,11 +45,6 @@ export function usageResetConfirmationDetail(resetCredits) {
   summary.append(count);
   content.append(summary);
 
-  const explanation = document.createElement("p");
-  explanation.className = "dialog-reset-explanation";
-  explanation.textContent = "确认后将优先使用最早失效的可用机会。";
-  content.append(explanation);
-
   if (resetCredits.credits.length === 0) {
     const empty = document.createElement("p");
     empty.className = "dialog-reset-empty";
@@ -60,8 +55,11 @@ export function usageResetConfirmationDetail(resetCredits) {
 
   const list = document.createElement("ol");
   list.className = "dialog-reset-credit-list";
+  const earliestAvailableIndex = resetCredits.credits.findIndex(
+    (credit) => credit.status.toLowerCase() === "available",
+  );
   for (const [index, credit] of resetCredits.credits.entries()) {
-    list.append(resetCreditDetailItem(credit, index));
+    list.append(resetCreditDetailItem(credit, index, index === earliestAvailableIndex));
   }
   content.append(list);
 
@@ -137,9 +135,10 @@ function compareResetCredits(left, right) {
   return leftExpiry - rightExpiry || left.id.localeCompare(right.id);
 }
 
-function resetCreditDetailItem(credit, index) {
+function resetCreditDetailItem(credit, index, isEarliestAvailable) {
   const item = document.createElement("li");
   item.className = "dialog-reset-credit";
+  item.classList.toggle("is-earliest-available", isEarliestAvailable);
 
   const header = document.createElement("div");
   header.className = "dialog-reset-credit-header";
