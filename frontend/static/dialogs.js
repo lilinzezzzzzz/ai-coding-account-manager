@@ -78,7 +78,7 @@ export function promptTextDialog(options) {
 }
 
 export function confirmDialog(options) {
-  const detail = document.createElement("p");
+  const detail = document.createElement("div");
   detail.className = "dialog-detail";
   if (options.detailContent) {
     detail.append(options.detailContent);

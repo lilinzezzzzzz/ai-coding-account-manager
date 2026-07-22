@@ -28,7 +28,50 @@ export function usageResetCredits(usage) {
   }
   return {
     availableCount: Math.max(0, Math.trunc(credits.availableCount)),
+    credits: Array.isArray(credits.credits)
+      ? credits.credits.map(normalizeResetCredit).filter(Boolean).sort(compareResetCredits)
+      : [],
   };
+}
+
+export function usageResetConfirmationDetail(resetCredits) {
+  const content = document.createDocumentFragment();
+  const summary = document.createElement("p");
+  summary.className = "dialog-reset-summary";
+  summary.append("当前可重置次数：");
+  const count = document.createElement("strong");
+  count.className = "dialog-reset-count";
+  count.textContent = `${resetCredits.availableCount}`;
+  summary.append(count);
+  content.append(summary);
+
+  const explanation = document.createElement("p");
+  explanation.className = "dialog-reset-explanation";
+  explanation.textContent = "确认后将优先使用最早失效的可用机会。";
+  content.append(explanation);
+
+  if (resetCredits.credits.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "dialog-reset-empty";
+    empty.textContent = "Codex 当前只返回了可用次数，没有返回每次机会的详细信息。";
+    content.append(empty);
+    return content;
+  }
+
+  const list = document.createElement("ol");
+  list.className = "dialog-reset-credit-list";
+  for (const [index, credit] of resetCredits.credits.entries()) {
+    list.append(resetCreditDetailItem(credit, index));
+  }
+  content.append(list);
+
+  if (resetCredits.availableCount > resetCredits.credits.length) {
+    const partial = document.createElement("p");
+    partial.className = "dialog-reset-partial";
+    partial.textContent = `Codex 返回了 ${resetCredits.credits.length} 条明细；其余 ${resetCredits.availableCount - resetCredits.credits.length} 次机会暂无详细信息。`;
+    content.append(partial);
+  }
+  return content;
 }
 
 export function usageResetButton({ resetCredits, loading, isRefreshing, isResetting, onReset }) {
@@ -73,6 +116,72 @@ function usageLimitItems(usage) {
     limitItem(rateLimitLabel(rateLimits.primary), rateLimits.primary),
     limitItem(rateLimitLabel(rateLimits.secondary), rateLimits.secondary),
   ].filter(Boolean);
+}
+
+function normalizeResetCredit(credit) {
+  if (!credit || typeof credit !== "object") {
+    return null;
+  }
+  return {
+    id: typeof credit.id === "string" ? credit.id.trim() : "",
+    status: typeof credit.status === "string" ? credit.status.trim() : "",
+    grantedAt: Number.isFinite(credit.grantedAt) ? credit.grantedAt : null,
+    expiresAt: Number.isFinite(credit.expiresAt) ? credit.expiresAt : null,
+    title: typeof credit.title === "string" ? credit.title.trim() : "",
+  };
+}
+
+function compareResetCredits(left, right) {
+  const leftExpiry = left.expiresAt > 0 ? left.expiresAt : Number.POSITIVE_INFINITY;
+  const rightExpiry = right.expiresAt > 0 ? right.expiresAt : Number.POSITIVE_INFINITY;
+  return leftExpiry - rightExpiry || left.id.localeCompare(right.id);
+}
+
+function resetCreditDetailItem(credit, index) {
+  const item = document.createElement("li");
+  item.className = "dialog-reset-credit";
+
+  const header = document.createElement("div");
+  header.className = "dialog-reset-credit-header";
+  const title = document.createElement("strong");
+  title.textContent = credit.title || `重置机会 ${index + 1}`;
+  const status = document.createElement("span");
+  status.className = "dialog-reset-credit-status";
+  status.dataset.status = credit.status.toLowerCase();
+  status.textContent = resetCreditStatusLabel(credit.status);
+  header.append(title, status);
+  item.append(header);
+
+  const creditID = document.createElement("div");
+  creditID.className = "dialog-reset-credit-id";
+  const creditIDValue = document.createElement("code");
+  creditIDValue.textContent = credit.id || "未知";
+  creditID.append(creditIDValue);
+
+  const times = document.createElement("div");
+  times.className = "dialog-reset-credit-times";
+  const grantedAt = document.createElement("span");
+  grantedAt.textContent = `发放时间: ${formatResetCreditTime(credit.grantedAt)}`;
+  const expiresAt = document.createElement("span");
+  expiresAt.textContent = `失效时间: ${formatResetCreditTime(credit.expiresAt)}`;
+  times.append(grantedAt, expiresAt);
+
+  item.append(creditID, times);
+  return item;
+}
+
+function formatResetCreditTime(value) {
+  return value > 0 ? formatDateTime(value) : "未知";
+}
+
+function resetCreditStatusLabel(status) {
+  const labels = {
+    available: "可用",
+    redeemed: "已使用",
+    expired: "已失效",
+  };
+  const normalized = status.toLowerCase();
+  return labels[normalized] || status || "状态未知";
 }
 
 function rateLimitLabel(limit) {

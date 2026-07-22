@@ -38,9 +38,21 @@ type UsageSnapshotResponse struct {
 	RefreshedAt           int64                          `json:"refreshedAt"`
 }
 
-// RateLimitResetCreditsResponse 是 Codex rate limit reset credits 摘要。
+// RateLimitResetCreditsResponse 是 Codex rate limit reset credits 摘要和可见明细。
 type RateLimitResetCreditsResponse struct {
-	AvailableCount int64 `json:"availableCount"`
+	AvailableCount int64                          `json:"availableCount"`
+	Credits        []RateLimitResetCreditResponse `json:"credits,omitempty"`
+}
+
+// RateLimitResetCreditResponse 是单次 Codex rate limit reset credit 的展示信息。
+type RateLimitResetCreditResponse struct {
+	ID          string  `json:"id"`
+	ResetType   string  `json:"resetType"`
+	Status      string  `json:"status"`
+	GrantedAt   int64   `json:"grantedAt"`
+	ExpiresAt   int64   `json:"expiresAt"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
 }
 
 // UpdatePlanExpirationRequest 是更新人工维护套餐到期时间的 HTTP request。

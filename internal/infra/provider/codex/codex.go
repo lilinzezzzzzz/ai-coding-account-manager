@@ -203,8 +203,17 @@ func (providerImpl *Provider) ResetAccountRateLimit(ctx context.Context, account
 		return provider.RateLimitResetResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "auth.json 对应账号与当前账号不一致")
 	}
 
+	var rateLimitsBeforeReset rateLimitsReadResponse
+	if err := client.Call(ctx, "account/rateLimits/read", map[string]any{}, &rateLimitsBeforeReset); err != nil {
+		_ = client.Close(context.Background())
+		return provider.RateLimitResetResult{}, mapAppServerError("read Codex rate limits before reset failed", err)
+	}
+	creditID := earliestExpiringAvailableCreditID(rateLimitsBeforeReset.RateLimitResetCredits)
 	var consumeResponse consumeRateLimitResetCreditResponse
-	if err := client.Call(ctx, "account/rateLimitResetCredit/consume", consumeRateLimitResetCreditParams{IdempotencyKey: idempotencyKey}, &consumeResponse); err != nil {
+	if err := client.Call(ctx, "account/rateLimitResetCredit/consume", consumeRateLimitResetCreditParams{
+		IdempotencyKey: idempotencyKey,
+		CreditID:       creditID,
+	}, &consumeResponse); err != nil {
 		_ = client.Close(context.Background())
 		return provider.RateLimitResetResult{}, mapAppServerError("consume Codex rate limit reset credit failed", err)
 	}
@@ -444,15 +453,47 @@ type rateLimitWindow struct {
 }
 
 type rateLimitResetCreditsSummary struct {
-	AvailableCount int64 `json:"availableCount"`
+	AvailableCount int64                  `json:"availableCount"`
+	Credits        []rateLimitResetCredit `json:"credits"`
+}
+
+type rateLimitResetCredit struct {
+	ID          string  `json:"id"`
+	ResetType   string  `json:"resetType"`
+	Status      string  `json:"status"`
+	GrantedAt   int64   `json:"grantedAt"`
+	ExpiresAt   int64   `json:"expiresAt"`
+	Title       *string `json:"title"`
+	Description *string `json:"description"`
 }
 
 type consumeRateLimitResetCreditParams struct {
 	IdempotencyKey string `json:"idempotencyKey"`
+	CreditID       string `json:"creditId,omitempty"`
 }
 
 type consumeRateLimitResetCreditResponse struct {
 	Outcome provider.RateLimitResetOutcome `json:"outcome"`
+}
+
+func earliestExpiringAvailableCreditID(summary *rateLimitResetCreditsSummary) string {
+	if summary == nil {
+		return ""
+	}
+
+	var selectedID string
+	var selectedExpiresAt int64
+	for _, credit := range summary.Credits {
+		creditID := strings.TrimSpace(credit.ID)
+		if creditID == "" || !strings.EqualFold(strings.TrimSpace(credit.Status), "available") || credit.ExpiresAt <= 0 {
+			continue
+		}
+		if selectedID == "" || credit.ExpiresAt < selectedExpiresAt || credit.ExpiresAt == selectedExpiresAt && creditID < selectedID {
+			selectedID = creditID
+			selectedExpiresAt = credit.ExpiresAt
+		}
+	}
+	return selectedID
 }
 
 func validRateLimitResetOutcome(outcome provider.RateLimitResetOutcome) bool {

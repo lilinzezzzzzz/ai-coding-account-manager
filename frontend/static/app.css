@@ -890,12 +890,14 @@ h1 {
 
 .app-dialog {
   width: min(640px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
   border: 1px solid #d4dde6;
   border-radius: 16px;
   background: var(--color-surface);
   color: var(--color-text);
   box-shadow: 0 28px 80px rgb(18 31 44 / 26%);
   padding: 24px;
+  overflow-y: auto;
 }
 
 .app-dialog[open] {
@@ -944,6 +946,88 @@ h1 {
   color: #24704d;
   font-size: 16px;
   font-weight: 800;
+}
+
+.dialog-reset-summary,
+.dialog-reset-explanation,
+.dialog-reset-empty,
+.dialog-reset-partial {
+  margin: 0;
+}
+
+.dialog-reset-explanation,
+.dialog-reset-empty,
+.dialog-reset-partial {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.dialog-reset-credit-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dialog-reset-credit {
+  border: 1px solid #dce4eb;
+  border-radius: 9px;
+  background: #ffffff;
+  padding: 9px 11px;
+}
+
+.dialog-reset-credit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  color: #26384a;
+}
+
+.dialog-reset-credit-status {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #edf2f6;
+  color: #526274;
+  padding: 2px 7px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.dialog-reset-credit-status[data-status="available"] {
+  background: #e8f5ee;
+  color: #24704d;
+}
+
+.dialog-reset-credit-status[data-status="expired"],
+.dialog-reset-credit-status[data-status="redeemed"] {
+  background: #f3f0ee;
+  color: #75645a;
+}
+
+.dialog-reset-credit-id {
+  margin: 5px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.dialog-reset-credit-id code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  overflow-wrap: anywhere;
+}
+
+.dialog-reset-credit-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 5px 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.dialog-reset-partial {
+  margin-top: 9px;
 }
 
 .dialog-error {

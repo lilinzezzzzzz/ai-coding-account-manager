@@ -2,7 +2,7 @@ import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeAddMenus } from "./components/add-menu.js?v=components";
 import { emptyState } from "./components/common.js?v=components";
 import { providerSection } from "./components/provider-section.js?v=radar-link-badge";
-import { usageResetCredits } from "./components/usage-limit.js?v=components";
+import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=reset-credit-layout";
 import {
   confirmDialog,
   promptAuthJSON,
@@ -203,7 +203,7 @@ async function resetAccountRateLimit(account) {
   const resetCredits = usageResetCredits(account.usage);
   const confirmed = await confirmDialog({
     title: account.label || account.email || account.accountId,
-    detailContent: resetConfirmationDetail(resetCredits ? resetCredits.availableCount : 0),
+    detailContent: usageResetConfirmationDetail(resetCredits || { availableCount: 0, credits: [] }),
     confirmText: "确认重置",
   });
   if (!confirmed) {
@@ -244,16 +244,6 @@ async function promptAccountRelogin(account, error) {
     await createLoginTask(account.providerId, account.email || "");
   }
   return true;
-}
-
-function resetConfirmationDetail(availableCount) {
-  const content = document.createDocumentFragment();
-  content.append("当前可重置次数：");
-  const count = document.createElement("strong");
-  count.className = "dialog-reset-count";
-  count.textContent = `${availableCount}`;
-  content.append(count, "\n点击确认重置，将消耗 1 次重置机会，并重置当前符合条件的额度窗口。");
-  return content;
 }
 
 function resetOutcomeMessage(outcome) {

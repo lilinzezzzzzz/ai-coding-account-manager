@@ -144,20 +144,39 @@ func TestProviderResetsAccountRateLimitAndReturnsLatestUsage(t *testing.T) {
 		t.Fatalf("import account credentials: %v", err)
 	}
 
-	fakeClient := &fakeCodexClient{responses: map[string]any{
-		"account/read": accountReadResponse{
-			Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
-		},
-		"account/rateLimitResetCredit/consume": consumeRateLimitResetCreditResponse{
-			Outcome: provider.RateLimitResetOutcomeReset,
-		},
-		"account/rateLimits/read": rateLimitsReadResponse{
-			RateLimitResetCredits: &rateLimitResetCreditsSummary{AvailableCount: 1},
-			RateLimits: rateLimitSnapshot{
-				Primary: &rateLimitWindow{UsedPercent: floatPtr(0)},
+	fakeClient := &fakeCodexClient{
+		responses: map[string]any{
+			"account/read": accountReadResponse{
+				Account: &codexAccount{Type: "chatgpt", Email: "user@example.com"},
+			},
+			"account/rateLimitResetCredit/consume": consumeRateLimitResetCreditResponse{
+				Outcome: provider.RateLimitResetOutcomeReset,
 			},
 		},
-	}}
+		responseSequences: map[string][]any{
+			"account/rateLimits/read": {
+				rateLimitsReadResponse{
+					RateLimitResetCredits: &rateLimitResetCreditsSummary{
+						AvailableCount: 3,
+						Credits: []rateLimitResetCredit{
+							{ID: "credit-latest", Status: "available", ExpiresAt: 3000},
+							{ID: "credit-expired", Status: "expired", ExpiresAt: 500},
+							{ID: "credit-earliest", Status: "available", ExpiresAt: 1000},
+						},
+					},
+					RateLimits: rateLimitSnapshot{
+						Primary: &rateLimitWindow{UsedPercent: floatPtr(100)},
+					},
+				},
+				rateLimitsReadResponse{
+					RateLimitResetCredits: &rateLimitResetCreditsSummary{AvailableCount: 2},
+					RateLimits: rateLimitSnapshot{
+						Primary: &rateLimitWindow{UsedPercent: floatPtr(0)},
+					},
+				},
+			},
+		},
+	}
 	codexProvider := newTestProvider(t, store, func(context.Context, appserver.Config) (appServerClient, error) {
 		return fakeClient, nil
 	})
@@ -176,8 +195,8 @@ func TestProviderResetsAccountRateLimitAndReturnsLatestUsage(t *testing.T) {
 	if err := json.Unmarshal([]byte(*result.Usage.SnapshotJSON), &snapshot); err != nil {
 		t.Fatalf("unmarshal reset snapshot: %v", err)
 	}
-	if snapshot.RateLimitResetCredits == nil || snapshot.RateLimitResetCredits.AvailableCount != 1 {
-		t.Fatalf("reset credits = %#v, want available count 1", snapshot.RateLimitResetCredits)
+	if snapshot.RateLimitResetCredits == nil || snapshot.RateLimitResetCredits.AvailableCount != 2 {
+		t.Fatalf("reset credits = %#v, want available count 2", snapshot.RateLimitResetCredits)
 	}
 
 	foundConsume := false
@@ -187,12 +206,68 @@ func TestProviderResetsAccountRateLimitAndReturnsLatestUsage(t *testing.T) {
 		}
 		foundConsume = true
 		params, ok := call.params.(consumeRateLimitResetCreditParams)
-		if !ok || params.IdempotencyKey != "reset-attempt-1" {
-			t.Fatalf("consume params = %#v, want idempotency key", call.params)
+		if !ok || params.IdempotencyKey != "reset-attempt-1" || params.CreditID != "credit-earliest" {
+			t.Fatalf("consume params = %#v, want idempotency key and earliest expiring credit", call.params)
 		}
 	}
 	if !foundConsume {
 		t.Fatal("consume method was not called")
+	}
+}
+
+func TestEarliestExpiringAvailableCreditID(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary *rateLimitResetCreditsSummary
+		want    string
+	}{
+		{name: "missing details", summary: &rateLimitResetCreditsSummary{AvailableCount: 3}},
+		{
+			name: "earliest available",
+			summary: &rateLimitResetCreditsSummary{Credits: []rateLimitResetCredit{
+				{ID: "later", Status: "available", ExpiresAt: 3000},
+				{ID: "expired", Status: "expired", ExpiresAt: 500},
+				{ID: "earliest", Status: "AVAILABLE", ExpiresAt: 1000},
+			}},
+			want: "earliest",
+		},
+		{
+			name: "stable tie break",
+			summary: &rateLimitResetCreditsSummary{Credits: []rateLimitResetCredit{
+				{ID: "credit-b", Status: "available", ExpiresAt: 1000},
+				{ID: "credit-a", Status: "available", ExpiresAt: 1000},
+			}},
+			want: "credit-a",
+		},
+		{
+			name: "invalid details",
+			summary: &rateLimitResetCreditsSummary{Credits: []rateLimitResetCredit{
+				{ID: "", Status: "available", ExpiresAt: 1000},
+				{ID: "missing-expiry", Status: "available"},
+			}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := earliestExpiringAvailableCreditID(test.summary); got != test.want {
+				t.Fatalf("earliestExpiringAvailableCreditID() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestConsumeRateLimitResetCreditParamsOmitsUnavailableCreditID(t *testing.T) {
+	payload, err := json.Marshal(consumeRateLimitResetCreditParams{IdempotencyKey: "reset-attempt-1"})
+	if err != nil {
+		t.Fatalf("marshal consume params: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("unmarshal consume params: %v", err)
+	}
+	if _, ok := decoded["creditId"]; ok {
+		t.Fatalf("consume params = %s, want creditId omitted", payload)
 	}
 }
 
@@ -347,9 +422,10 @@ func TestReauthenticationRequiredUpstreamCodes(t *testing.T) {
 }
 
 type fakeCodexClient struct {
-	responses map[string]any
-	calls     []fakeCodexCall
-	closed    bool
+	responses         map[string]any
+	responseSequences map[string][]any
+	calls             []fakeCodexCall
+	closed            bool
 }
 
 type fakeCodexCall struct {
@@ -359,10 +435,19 @@ type fakeCodexCall struct {
 
 func (client *fakeCodexClient) Call(_ context.Context, method string, params any, result any) error {
 	client.calls = append(client.calls, fakeCodexCall{method: method, params: params})
+	if responses := client.responseSequences[method]; len(responses) > 0 {
+		response := responses[0]
+		client.responseSequences[method] = responses[1:]
+		return copyCodexResponse(response, result)
+	}
 	response, ok := client.responses[method]
 	if !ok {
 		return nil
 	}
+	return copyCodexResponse(response, result)
+}
+
+func copyCodexResponse(response any, result any) error {
 	payload, err := json.Marshal(response)
 	if err != nil {
 		return err
