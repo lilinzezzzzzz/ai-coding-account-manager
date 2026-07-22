@@ -1,4 +1,4 @@
-import { accountCard } from "./account-card.js?v=components";
+import { accountCard } from "./account-card.js?v=reset-refresh-actions";
 import { providerActions } from "./add-menu.js?v=components";
 import { emptyState } from "./common.js?v=components";
 

@@ -801,12 +801,12 @@ h1 {
   text-align: left;
 }
 
-.usage-reset-tooltip {
+.account-refresh-tooltip {
   flex: 0 0 auto;
   display: inline-flex;
 }
 
-.usage-reset-button {
+.account-refresh-button {
   flex: 0 0 auto;
   min-width: 36px;
   min-height: 32px;
@@ -820,20 +820,46 @@ h1 {
   padding: 6px 10px;
 }
 
-.usage-reset-button:hover:not(:disabled) {
+.account-refresh-button:hover:not(:disabled) {
   border-color: #8faabd;
   background: #eef5f9;
 }
 
-.usage-reset-button.is-resetting .usage-reset-icon {
+.account-refresh-button.is-refreshing .account-refresh-icon {
   display: inline-block;
-  animation: reset-button-spin 800ms linear infinite;
+  animation: account-refresh-button-spin 800ms linear infinite;
 }
 
-@keyframes reset-button-spin {
+@keyframes account-refresh-button-spin {
   to {
     transform: rotate(360deg);
   }
+}
+
+.account-actions > .usage-reset-tooltip {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.account-actions .usage-reset-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  border: 1px solid #d9c5a0;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #76551e;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.account-actions .usage-reset-button:hover:not(:disabled) {
+  border-color: #c5a76d;
+  background: #fff5df;
+  color: #674816;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -845,7 +871,7 @@ h1 {
     animation: none;
   }
 
-  .usage-reset-button.is-resetting .usage-reset-icon {
+  .account-refresh-button.is-refreshing .account-refresh-icon {
     animation: none;
   }
 

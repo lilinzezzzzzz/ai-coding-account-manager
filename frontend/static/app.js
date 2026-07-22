@@ -1,8 +1,8 @@
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeAddMenus } from "./components/add-menu.js?v=components";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=radar-link-badge";
-import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=highlight-earliest-reset-credit";
+import { providerSection } from "./components/provider-section.js?v=reset-refresh-actions";
+import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=reset-refresh-actions";
 import {
   confirmDialog,
   promptAuthJSON,

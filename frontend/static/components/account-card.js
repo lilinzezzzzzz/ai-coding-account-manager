@@ -1,6 +1,6 @@
 import { formatPlanDate, shortId } from "../formatters.js?v=split-modules";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
-import { usageBlock, usageResetButton, usageResetCredits } from "./usage-limit.js?v=components";
+import { usageBlock, usageResetButton, usageResetCredits } from "./usage-limit.js?v=reset-refresh-actions";
 
 export function accountCard({
   account,
@@ -49,17 +49,7 @@ export function accountCard({
   main.append(meta);
   header.append(main);
   const resetCredits = usageResetCredits(account.usage);
-  if (resetCredits) {
-    header.append(
-      usageResetButton({
-        resetCredits,
-        loading,
-        isRefreshing,
-        isResetting,
-        onReset,
-      }),
-    );
-  }
+  header.append(accountRefreshButton({ loading, isRefreshing, isResetting, onRefresh }));
   card.append(header);
 
   card.append(
@@ -70,7 +60,17 @@ export function accountCard({
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  actions.append(accountActionButton(isRefreshing ? "刷新中" : "刷新", onRefresh, isBusy, loading));
+  if (resetCredits) {
+    actions.append(
+      usageResetButton({
+        resetCredits,
+        loading,
+        isRefreshing,
+        isResetting,
+        onReset,
+      }),
+    );
+  }
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(accountActionButton("激活", onActivate, isBusy, loading));
   }
@@ -91,6 +91,34 @@ function actionButton(label, handler, loading) {
   button.disabled = loading;
   button.addEventListener("click", handler);
   return button;
+}
+
+function accountRefreshButton({ loading, isRefreshing, isResetting, onRefresh }) {
+  const label = isRefreshing
+    ? "正在刷新账号状态和额度"
+    : isResetting
+      ? "额度重置期间无法刷新"
+      : "刷新账号状态和额度";
+  const wrapper = document.createElement("span");
+  wrapper.className = "account-refresh-tooltip";
+  setTooltip(wrapper, label);
+
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "account-refresh-button";
+  button.classList.toggle("is-refreshing", isRefreshing);
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-busy", `${isRefreshing}`);
+  button.dataset.disabledWhenIdle = `${isRefreshing || isResetting}`;
+  button.disabled = loading || button.dataset.disabledWhenIdle === "true";
+  const icon = document.createElement("span");
+  icon.className = "account-refresh-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "↻";
+  button.append(icon);
+  button.addEventListener("click", onRefresh);
+  wrapper.append(button);
+  return wrapper;
 }
 
 function accountActionButton(label, handler, accountRefreshing, loading) {

@@ -76,9 +76,11 @@ export function usageResetButton({ resetCredits, loading, isRefreshing, isResett
   const hasAvailableCredit = resetCredits.availableCount > 0;
   const label = isResetting
     ? "正在重置额度"
-    : hasAvailableCredit
-      ? `可重置次数 ${resetCredits.availableCount}，点击重置`
-      : "没有可用的重置次数";
+    : isRefreshing
+      ? "账号刷新期间无法重置额度"
+      : hasAvailableCredit
+        ? `可重置次数 ${resetCredits.availableCount}，点击重置`
+        : "没有可用的重置次数";
   const wrapper = document.createElement("span");
   wrapper.className = "usage-reset-tooltip";
   setTooltip(wrapper, label);
@@ -86,13 +88,12 @@ export function usageResetButton({ resetCredits, loading, isRefreshing, isResett
   const button = document.createElement("button");
   button.type = "button";
   button.className = "usage-reset-button";
-  const icon = document.createElement("span");
-  icon.className = "usage-reset-icon";
-  icon.setAttribute("aria-hidden", "true");
-  icon.textContent = "↻";
-  button.append(icon);
+  button.textContent = isResetting
+    ? "重置中"
+    : hasAvailableCredit
+      ? `重置额度（${resetCredits.availableCount}）`
+      : "重置额度";
   button.setAttribute("aria-label", label);
-  button.classList.toggle("is-resetting", isResetting);
   button.setAttribute("aria-busy", `${isResetting}`);
   button.dataset.disabledWhenIdle = `${isRefreshing || isResetting || !hasAvailableCredit}`;
   button.disabled = loading || button.dataset.disabledWhenIdle === "true";
