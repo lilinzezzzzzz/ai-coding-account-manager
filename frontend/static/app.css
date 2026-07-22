@@ -352,29 +352,6 @@ h1 {
   font-size: 13px;
 }
 
-.local-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  flex: 0 0 auto;
-  border: 1px solid #d7e1e9;
-  border-radius: 999px;
-  background: rgb(255 255 255 / 72%);
-  color: #526276;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: var(--shadow-sm);
-}
-
-.local-badge > span {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: #3a9668;
-  box-shadow: 0 0 0 3px rgb(58 150 104 / 12%);
-}
-
 .toolbar,
 .account-actions {
   display: flex;
