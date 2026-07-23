@@ -401,6 +401,7 @@ func TestReauthenticationRequiredUpstreamCodes(t *testing.T) {
 		code string
 		want bool
 	}{
+		{code: "token_expired", want: true},
 		{code: "token_invalidated", want: true},
 		{code: "token_revoked", want: true},
 		{code: "refresh_token_expired", want: true},

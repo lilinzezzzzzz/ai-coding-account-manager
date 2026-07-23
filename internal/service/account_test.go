@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,7 @@ func TestResetAccountRateLimitSkipsProviderWhenNoCreditAvailable(t *testing.T) {
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry)
+	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry, NewAccountActivationCoordinator())
 	result, err := accountService.ResetAccountRateLimit(ctx, account.ProviderID, account.AccountID, "reset-attempt-1")
 	if err != nil {
 		t.Fatalf("ResetAccountRateLimit() error = %v", err)
@@ -139,7 +140,7 @@ func TestResetAccountRateLimitPersistsAuthExpiredOnReauthenticationError(t *test
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry)
+	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry, NewAccountActivationCoordinator())
 	_, err = accountService.ResetAccountRateLimit(ctx, account.ProviderID, account.AccountID, "reset-auth-expired")
 	if !isAppErrorCode(err, entity.ErrorCodeReauthenticationRequired) {
 		t.Fatalf("ResetAccountRateLimit() error = %v, want %s", err, entity.ErrorCodeReauthenticationRequired)
@@ -201,7 +202,7 @@ func TestRefreshAccountLogsProviderFailure(t *testing.T) {
 		t.Fatalf("seed account error = %v", err)
 	}
 
-	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry)
+	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry, NewAccountActivationCoordinator())
 	result, err := accountService.RefreshAccount(ctx, "codex", account.AccountID)
 	if err != nil {
 		t.Fatalf("RefreshAccount() error = %v", err)
@@ -288,7 +289,7 @@ func TestRefreshAccountPersistsAuthExpiredWithStableErrorCode(t *testing.T) {
 		t.Fatalf("Register() error = %v", err)
 	}
 
-	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry)
+	accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry, NewAccountActivationCoordinator())
 	result, err := accountService.RefreshAccount(ctx, account.ProviderID, account.AccountID)
 	if err != nil {
 		t.Fatalf("RefreshAccount() error = %v", err)
@@ -316,6 +317,107 @@ func TestRefreshAccountPersistsAuthExpiredWithStableErrorCode(t *testing.T) {
 	}
 }
 
+func TestRefreshAccountSyncsOnlyAccountThatIsStillActive(t *testing.T) {
+	tests := []struct {
+		name                string
+		switchDuringRefresh bool
+		activateErr         error
+		wantActivateCalls   int
+		wantActive          bool
+		wantErrorCode       entity.ErrorCode
+	}{
+		{name: "active account remains active", wantActivateCalls: 1, wantActive: true},
+		{name: "active account switched during refresh", switchDuringRefresh: true, wantActivateCalls: 0, wantActive: false},
+		{name: "active credential sync fails", activateErr: errors.New("write auth.json"), wantActivateCalls: 1, wantErrorCode: entity.ErrorCodeUnavailable},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := context.Background()
+			appDB, err := database.Open(ctx, database.Config{Path: filepath.Join(t.TempDir(), "state.db")})
+			if err != nil {
+				t.Fatalf("Open() error = %v", err)
+			}
+			t.Cleanup(func() {
+				if err := appDB.Close(); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+			})
+
+			daos := dao.NewDAOs(appDB.GORM())
+			activeAccount := entity.Account{
+				ProviderID: "codex",
+				AccountID:  "acct-active",
+				StorageID:  entity.StorageIDForAccount("codex", "acct-active"),
+				Label:      "acct-active",
+				IsActive:   true,
+				CreatedAt:  1000,
+				UpdatedAt:  1000,
+			}
+			otherAccount := entity.Account{
+				ProviderID: "codex",
+				AccountID:  "acct-other",
+				StorageID:  entity.StorageIDForAccount("codex", "acct-other"),
+				Label:      "acct-other",
+				CreatedAt:  1000,
+				UpdatedAt:  1000,
+			}
+			for _, account := range []entity.Account{activeAccount, otherAccount} {
+				if err := daos.Accounts.Create(ctx, account); err != nil {
+					t.Fatalf("seed account %s error = %v", account.AccountID, err)
+				}
+			}
+
+			baseProvider := fake.New(fake.Config{
+				ID:          "codex",
+				DisplayName: "Codex Fake",
+				Accounts: []fake.AccountState{{
+					Account: activeAccount,
+					Usage: entity.UsageSnapshot{
+						ProviderID:  "codex",
+						AccountID:   activeAccount.AccountID,
+						Status:      entity.UsageStatusReady,
+						RefreshedAt: 2000,
+					},
+				}},
+			})
+			trackingProvider := &trackingAccountActivationProvider{Provider: baseProvider, activateErr: test.activateErr}
+			if test.switchDuringRefresh {
+				trackingProvider.afterRefresh = func() {
+					if err := daos.Accounts.SetActive(ctx, "codex", otherAccount.AccountID, 3000); err != nil {
+						t.Fatalf("switch active account error = %v", err)
+					}
+				}
+			}
+			registry := provider.NewRegistry()
+			if err := registry.Register(ctx, trackingProvider); err != nil {
+				t.Fatalf("Register() error = %v", err)
+			}
+
+			accountService := NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, registry, NewAccountActivationCoordinator())
+			result, err := accountService.RefreshAccount(ctx, activeAccount.ProviderID, activeAccount.AccountID)
+			if err != nil {
+				t.Fatalf("RefreshAccount() error = %v", err)
+			}
+			if trackingProvider.activateCalls != test.wantActivateCalls {
+				t.Fatalf("activate calls = %d, want %d", trackingProvider.activateCalls, test.wantActivateCalls)
+			}
+			if test.wantErrorCode != "" {
+				if result.ErrorCode == nil || *result.ErrorCode != string(test.wantErrorCode) || result.Account != nil {
+					t.Fatalf("refresh result = %+v, want %s", result, test.wantErrorCode)
+				}
+				return
+			}
+			if result.ErrorCode != nil || result.Account == nil {
+				t.Fatalf("refresh result = %+v, want success", result)
+			}
+			if result.Account.Account.IsActive != test.wantActive {
+				t.Fatalf("result active = %t, want %t", result.Account.Account.IsActive, test.wantActive)
+			}
+		})
+	}
+}
+
 func TestResponseErrorCodePrefersUpstreamCode(t *testing.T) {
 	err := entity.WrapAppErrorWithUpstreamError(
 		entity.ErrorCodeUnavailable,
@@ -337,6 +439,26 @@ func TestResponseErrorCodePrefersUpstreamCode(t *testing.T) {
 type trackingRateLimitResetProvider struct {
 	provider.Provider
 	resetCalls int
+}
+
+type trackingAccountActivationProvider struct {
+	*fake.Provider
+	afterRefresh  func()
+	activateCalls int
+	activateErr   error
+}
+
+func (tracking *trackingAccountActivationProvider) RefreshAccountWithMetadata(ctx context.Context, account entity.Account) (*entity.Account, *entity.UsageSnapshot, error) {
+	refreshedAccount, snapshot, err := tracking.Provider.RefreshAccountWithMetadata(ctx, account)
+	if err == nil && tracking.afterRefresh != nil {
+		tracking.afterRefresh()
+	}
+	return refreshedAccount, snapshot, err
+}
+
+func (tracking *trackingAccountActivationProvider) ActivateAccount(context.Context, entity.Account) error {
+	tracking.activateCalls++
+	return tracking.activateErr
 }
 
 type failingMetadataRefreshProvider struct {

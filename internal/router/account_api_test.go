@@ -385,7 +385,8 @@ func newAccountAPIHandlerWithRefreshError(t *testing.T, refreshErr error) (http.
 		t.Fatalf("seed acct-2 error = %v", err)
 	}
 
-	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry)
+	activation := service.NewAccountActivationCoordinator()
+	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry, activation)
 	providerService := service.NewProviderService(providerRegistry)
 	testLoginImported = make(chan struct{}, 1)
 	loginTaskService, err := service.NewLoginTaskService(service.LoginTaskConfig{
@@ -395,10 +396,11 @@ func newAccountAPIHandlerWithRefreshError(t *testing.T, refreshErr error) (http.
 			ConfiguredBin: "/tmp/fake-codex",
 			Validator:     testRuntimeValidator{},
 		}),
-		Runner:   testLoginRunner{},
-		Importer: testLoginImporter{},
-		RootDir:  filepath.Join(t.TempDir(), "login-tasks"),
-		TaskTTL:  time.Minute,
+		Runner:     testLoginRunner{},
+		Importer:   testLoginImporter{},
+		RootDir:    filepath.Join(t.TempDir(), "login-tasks"),
+		TaskTTL:    time.Minute,
+		Activation: activation,
 	})
 	if err != nil {
 		t.Fatalf("NewLoginTaskService() error = %v", err)
@@ -524,6 +526,10 @@ func (testLoginImporter) ImportAccountAuthFromCodexDir(context.Context, entity.A
 	case testLoginImported <- struct{}{}:
 	default:
 	}
+	return nil
+}
+
+func (testLoginImporter) ActivateAccount(context.Context, entity.Account) error {
 	return nil
 }
 

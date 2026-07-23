@@ -24,8 +24,9 @@ func buildServices(ctx context.Context, cfg config.Config, appDB *database.DB) (
 	}
 
 	daos := dao.NewDAOs(appDB.GORM())
-	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry)
-	loginTaskService, err := newLoginTaskService(cfg, daos, appDB, runtimeResolver, codexProvider)
+	activation := service.NewAccountActivationCoordinator()
+	accountService := service.NewAccountService(dao.NewUnitOfWork(appDB.GORM()), daos, providerRegistry, activation)
+	loginTaskService, err := newLoginTaskService(cfg, daos, appDB, runtimeResolver, codexProvider, activation)
 	if err != nil {
 		return services{}, err
 	}
@@ -37,7 +38,7 @@ func buildServices(ctx context.Context, cfg config.Config, appDB *database.DB) (
 	}, nil
 }
 
-func newLoginTaskService(cfg config.Config, daos dao.DAOs, appDB *database.DB, runtimeResolver *codexruntime.Resolver, codexProvider *codex.Provider) (*service.LoginTaskService, error) {
+func newLoginTaskService(cfg config.Config, daos dao.DAOs, appDB *database.DB, runtimeResolver *codexruntime.Resolver, codexProvider *codex.Provider, activation *service.AccountActivationCoordinator) (*service.LoginTaskService, error) {
 	if strings.EqualFold(cfg.ProviderMode, "fake") || codexProvider == nil {
 		return nil, nil
 	}
@@ -48,5 +49,6 @@ func newLoginTaskService(cfg config.Config, daos dao.DAOs, appDB *database.DB, r
 		Runner:     loginrunner.Runner{},
 		Importer:   codexProvider,
 		RootDir:    filepath.Join(cfg.DataDir, "login-tasks"),
+		Activation: activation,
 	})
 }

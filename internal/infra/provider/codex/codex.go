@@ -408,7 +408,8 @@ func mapAppServerError(message string, err error) error {
 
 func isReauthenticationRequiredUpstreamCode(code string) bool {
 	switch strings.ToLower(strings.TrimSpace(code)) {
-	case "token_invalidated",
+	case "token_expired",
+		"token_invalidated",
 		"token_revoked",
 		"refresh_token_expired",
 		"refresh_token_reused",

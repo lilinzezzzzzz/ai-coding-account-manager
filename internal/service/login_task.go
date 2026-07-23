@@ -71,22 +71,24 @@ type CreateLoginTaskInput struct {
 	ExpectedEmail string
 }
 
-// CodexAccountImporter 描述从隔离 CODEX_HOME 读取账号并导入 auth.json 的能力。
+// CodexAccountImporter 描述从隔离 CODEX_HOME 读取、导入和激活 auth.json 的能力。
 type CodexAccountImporter interface {
 	ReadAccountFromCodexDir(context.Context, string) (*entity.Account, error)
 	ImportAccountAuthFromCodexDir(context.Context, entity.Account, string) error
+	ActivateAccount(context.Context, entity.Account) error
 }
 
 // LoginTaskService 编排 Codex 登录任务生命周期。
 type LoginTaskService struct {
-	uow      dao.UnitOfWork
-	daos     dao.DAOs
-	resolver *codexruntime.Resolver
-	runner   loginRunner
-	importer CodexAccountImporter
-	rootDir  string
-	now      func() time.Time
-	taskTTL  time.Duration
+	uow        dao.UnitOfWork
+	daos       dao.DAOs
+	resolver   *codexruntime.Resolver
+	runner     loginRunner
+	importer   CodexAccountImporter
+	rootDir    string
+	now        func() time.Time
+	taskTTL    time.Duration
+	activation *AccountActivationCoordinator
 
 	mu    sync.Mutex
 	tasks map[string]*loginTaskState
@@ -112,6 +114,7 @@ type LoginTaskConfig struct {
 	RootDir    string
 	Now        func() time.Time
 	TaskTTL    time.Duration
+	Activation *AccountActivationCoordinator
 }
 
 // NewLoginTaskService 创建登录任务 service。
@@ -124,6 +127,9 @@ func NewLoginTaskService(cfg LoginTaskConfig) (*LoginTaskService, error) {
 	}
 	if cfg.Importer == nil {
 		return nil, fmt.Errorf("codex account importer is required")
+	}
+	if cfg.Activation == nil {
+		return nil, fmt.Errorf("account activation coordinator is required")
 	}
 	if cfg.RootDir == "" {
 		return nil, fmt.Errorf("login task root dir is required")
@@ -140,15 +146,16 @@ func NewLoginTaskService(cfg LoginTaskConfig) (*LoginTaskService, error) {
 		return nil, fmt.Errorf("create login task root dir: %w", err)
 	}
 	return &LoginTaskService{
-		uow:      cfg.UnitOfWork,
-		daos:     cfg.DAOs,
-		resolver: cfg.Resolver,
-		runner:   cfg.Runner,
-		importer: cfg.Importer,
-		rootDir:  cfg.RootDir,
-		now:      now,
-		taskTTL:  taskTTL,
-		tasks:    map[string]*loginTaskState{},
+		uow:        cfg.UnitOfWork,
+		daos:       cfg.DAOs,
+		resolver:   cfg.Resolver,
+		runner:     cfg.Runner,
+		importer:   cfg.Importer,
+		rootDir:    cfg.RootDir,
+		now:        now,
+		taskTTL:    taskTTL,
+		activation: cfg.Activation,
+		tasks:      map[string]*loginTaskState{},
 	}, nil
 }
 
@@ -315,7 +322,7 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 		service.cleanupTaskDir(taskID)
 		return
 	}
-	persisted, err := service.persistImportedAccount(ctx, *account)
+	persisted, err := service.persistAndSyncImportedAccount(ctx, *account)
 	if err != nil {
 		service.failTask(ctx, taskID, err)
 		service.cleanupTaskDir(taskID)
@@ -335,6 +342,25 @@ func (service *LoginTaskService) runTask(ctx context.Context, taskID string, cod
 		"account_id", persisted.AccountID,
 	)
 	service.cleanupTaskDir(taskID)
+}
+
+func (service *LoginTaskService) persistAndSyncImportedAccount(ctx context.Context, account entity.Account) (entity.Account, error) {
+	if err := service.activation.acquire(ctx); err != nil {
+		return entity.Account{}, err
+	}
+	defer service.activation.release()
+
+	persisted, err := service.persistImportedAccount(ctx, account)
+	if err != nil {
+		return entity.Account{}, err
+	}
+	if !persisted.IsActive {
+		return persisted, nil
+	}
+	if err := service.importer.ActivateAccount(ctx, persisted); err != nil {
+		return entity.Account{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "同步当前 Codex 登录态失败", err)
+	}
+	return persisted, nil
 }
 
 func (service *LoginTaskService) taskMode(taskID string) loginrunner.Mode {

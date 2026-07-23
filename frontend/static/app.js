@@ -29,6 +29,7 @@ const messageAutoHideMs = 4200;
 const errorMessageAutoHideMs = 7000;
 const codexReloginErrorCodes = new Set([
   "REAUTHENTICATION_REQUIRED",
+  "token_expired",
   "token_invalidated",
   "token_revoked",
   "refresh_token_expired",

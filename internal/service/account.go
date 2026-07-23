@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
@@ -60,21 +59,21 @@ type ResetRateLimitResult struct {
 
 // AccountService 编排账号生命周期、DAO 事务和 provider 调用。
 type AccountService struct {
-	uow       dao.UnitOfWork
-	daos      dao.DAOs
-	providers *provider.Registry
-	now       func() time.Time
-
-	activateMu sync.Mutex
+	uow        dao.UnitOfWork
+	daos       dao.DAOs
+	providers  *provider.Registry
+	now        func() time.Time
+	activation *AccountActivationCoordinator
 }
 
 // NewAccountService 创建账号 service。
-func NewAccountService(uow dao.UnitOfWork, daos dao.DAOs, providers *provider.Registry) *AccountService {
+func NewAccountService(uow dao.UnitOfWork, daos dao.DAOs, providers *provider.Registry, activation *AccountActivationCoordinator) *AccountService {
 	return &AccountService{
-		uow:       uow,
-		daos:      daos,
-		providers: providers,
-		now:       time.Now,
+		uow:        uow,
+		daos:       daos,
+		providers:  providers,
+		now:        time.Now,
+		activation: activation,
 	}
 }
 
@@ -186,6 +185,11 @@ func (service *AccountService) ImportAccountAuthJSONAndRefresh(ctx context.Conte
 
 // ImportCurrentAccount 从 provider 当前活动登录态导入账号。
 func (service *AccountService) ImportCurrentAccount(ctx context.Context, providerID string) (AccountWithUsage, error) {
+	if err := service.activation.acquire(ctx); err != nil {
+		return AccountWithUsage{}, err
+	}
+	defer service.activation.release()
+
 	registeredProvider, err := service.getProvider(providerID)
 	if err != nil {
 		return AccountWithUsage{}, err
@@ -224,10 +228,10 @@ func (service *AccountService) UpdatePlanExpiration(ctx context.Context, provide
 
 // ActivateAccount 激活账号，并要求同一时间只有一个 activate 操作。
 func (service *AccountService) ActivateAccount(ctx context.Context, providerID string, accountID string) (entity.Account, error) {
-	if !service.activateMu.TryLock() {
+	if !service.activation.tryAcquire() {
 		return entity.Account{}, entity.NewAppError(entity.ErrorCodeOperationInProgress)
 	}
-	defer service.activateMu.Unlock()
+	defer service.activation.release()
 
 	registeredProvider, err := service.getProvider(providerID)
 	if err != nil {
@@ -407,11 +411,37 @@ func (service *AccountService) refreshOne(ctx context.Context, account entity.Ac
 		logRefreshFailure(ctx, account, errorCodePtr(err), err)
 		return result
 	}
+	currentAccount, err := service.syncRefreshedActiveAccount(ctx, registeredProvider, account.ProviderID, account.AccountID)
+	if err != nil {
+		result.ErrorCode = responseErrorCodePtr(err)
+		result.ErrorMessage = errorMessagePtr(err)
+		logRefreshFailure(ctx, account, errorCodePtr(err), err)
+		return result
+	}
 	result.Account = &AccountWithUsage{
-		Account: refreshedViewAccount,
+		Account: currentAccount,
 		Usage:   &normalizedSnapshot,
 	}
 	return result
+}
+
+func (service *AccountService) syncRefreshedActiveAccount(ctx context.Context, registeredProvider provider.Provider, providerID string, accountID string) (entity.Account, error) {
+	if err := service.activation.acquire(ctx); err != nil {
+		return entity.Account{}, err
+	}
+	defer service.activation.release()
+
+	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
+	if err != nil {
+		return entity.Account{}, err
+	}
+	if !account.IsActive {
+		return account, nil
+	}
+	if err := registeredProvider.ActivateAccount(ctx, account); err != nil {
+		return entity.Account{}, entity.WrapAppErrorWithMessage(entity.ErrorCodeUnavailable, "同步当前 Codex 登录态失败", err)
+	}
+	return account, nil
 }
 
 func (service *AccountService) persistFailedUsage(ctx context.Context, account entity.Account, code *entity.ErrorCode) error {
