@@ -1,6 +1,7 @@
 import { formatPlanDate, shortId } from "../formatters.js?v=split-modules";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
-import { usageBlock, usageResetButton, usageResetCredits } from "./usage-limit.js?v=reset-refresh-actions";
+import { closeMenus } from "./add-menu.js?v=account-action-menu";
+import { usageBlock, usageResetCredits } from "./usage-limit.js?v=account-action-menu";
 
 export function accountCard({
   account,
@@ -49,7 +50,7 @@ export function accountCard({
   main.append(meta);
   header.append(main);
   const resetCredits = usageResetCredits(account.usage);
-  header.append(accountRefreshButton({ loading, isRefreshing, isResetting, onRefresh }));
+  header.append(accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset }));
   card.append(header);
 
   card.append(
@@ -60,17 +61,6 @@ export function accountCard({
 
   const actions = document.createElement("div");
   actions.className = "account-actions";
-  if (resetCredits) {
-    actions.append(
-      usageResetButton({
-        resetCredits,
-        loading,
-        isRefreshing,
-        isResetting,
-        onReset,
-      }),
-    );
-  }
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(accountActionButton("激活", onActivate, isBusy, loading));
   }
@@ -93,32 +83,141 @@ function actionButton(label, handler, loading) {
   return button;
 }
 
-function accountRefreshButton({ loading, isRefreshing, isResetting, onRefresh }) {
+function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset }) {
+  const menu = document.createElement("div");
+  menu.className = "account-action-menu";
   const label = isRefreshing
     ? "正在刷新账号状态和额度"
     : isResetting
-      ? "额度重置期间无法刷新"
-      : "刷新账号状态和额度";
-  const wrapper = document.createElement("span");
-  wrapper.className = "account-refresh-tooltip";
-  setTooltip(wrapper, label);
+      ? "正在重置额度"
+      : "账号操作";
 
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "account-refresh-button";
-  button.classList.toggle("is-refreshing", isRefreshing);
-  button.setAttribute("aria-label", label);
-  button.setAttribute("aria-busy", `${isRefreshing}`);
-  button.dataset.disabledWhenIdle = `${isRefreshing || isResetting}`;
-  button.disabled = loading || button.dataset.disabledWhenIdle === "true";
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "account-refresh-button account-action-menu-trigger";
+  trigger.classList.toggle("is-refreshing", isRefreshing);
+  trigger.setAttribute("aria-label", label);
+  trigger.setAttribute("aria-busy", `${isRefreshing || isResetting}`);
+  trigger.setAttribute("aria-haspopup", "menu");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.dataset.popupMenuTrigger = "true";
+  trigger.dataset.disabledWhenIdle = `${isRefreshing || isResetting}`;
+  trigger.disabled = loading || trigger.dataset.disabledWhenIdle === "true";
+  setTooltip(trigger, label);
   const icon = document.createElement("span");
   icon.className = "account-refresh-icon";
   icon.setAttribute("aria-hidden", "true");
   icon.textContent = "↻";
-  button.append(icon);
-  button.addEventListener("click", onRefresh);
-  wrapper.append(button);
-  return wrapper;
+  trigger.append(icon);
+  menu.append(trigger);
+
+  const options = document.createElement("div");
+  options.className = "account-action-menu-options";
+  options.setAttribute("role", "menu");
+  options.setAttribute("aria-label", "账号操作");
+  options.append(
+    accountMenuItem({
+      label: "刷新",
+      description: "刷新账号状态和额度",
+      icon: "↻",
+      disabledWhenIdle: isRefreshing || isResetting,
+      loading,
+      handler: onRefresh,
+    }),
+    accountMenuItem({
+      label: resetCredits && resetCredits.availableCount > 0
+        ? `重置额度（${resetCredits.availableCount}）`
+        : "重置额度",
+      description: resetCredits
+        ? resetCredits.availableCount > 0
+          ? `剩余 ${resetCredits.availableCount} 次可用机会`
+          : "没有可用的重置次数"
+        : "额度信息尚未刷新",
+      icon: "↺",
+      disabledWhenIdle: isRefreshing || isResetting || !resetCredits || resetCredits.availableCount < 1,
+      loading,
+      handler: onReset,
+    }),
+  );
+
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const expanded = trigger.getAttribute("aria-expanded") === "true";
+    closeMenus();
+    trigger.setAttribute("aria-expanded", expanded ? "false" : "true");
+  });
+  trigger.addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp"].includes(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    closeMenus();
+    trigger.setAttribute("aria-expanded", "true");
+    focusAccountMenuItem(options, event.key === "ArrowUp" ? "last" : "first");
+  });
+  options.addEventListener("keydown", (event) => handleAccountMenuKeydown(event, options, trigger));
+  menu.append(options);
+  return menu;
+}
+
+function accountMenuItem({ label, description, icon, disabledWhenIdle, loading, handler }) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "account-action-menu-item";
+  button.setAttribute("role", "menuitem");
+  button.dataset.disabledWhenIdle = `${disabledWhenIdle}`;
+  button.disabled = loading || button.dataset.disabledWhenIdle === "true";
+
+  const itemIcon = document.createElement("span");
+  itemIcon.className = "account-action-menu-item-icon";
+  itemIcon.setAttribute("aria-hidden", "true");
+  itemIcon.textContent = icon;
+  const copy = document.createElement("span");
+  copy.className = "account-action-menu-item-copy";
+  const title = document.createElement("strong");
+  title.textContent = label;
+  const detail = document.createElement("span");
+  detail.textContent = description;
+  copy.append(title, detail);
+  button.append(itemIcon, copy);
+  button.addEventListener("click", () => {
+    closeMenus();
+    handler();
+  });
+  return button;
+}
+
+function handleAccountMenuKeydown(event, menu, trigger) {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    event.stopPropagation();
+    closeMenus();
+    trigger.focus();
+    return;
+  }
+  const positions = { ArrowDown: "next", ArrowUp: "previous", Home: "first", End: "last" };
+  if (!positions[event.key]) {
+    return;
+  }
+  event.preventDefault();
+  focusAccountMenuItem(menu, positions[event.key]);
+}
+
+function focusAccountMenuItem(menu, position) {
+  const items = [...menu.querySelectorAll("[role='menuitem']:not(:disabled)")];
+  if (items.length === 0) {
+    return;
+  }
+  const currentIndex = items.indexOf(document.activeElement);
+  let nextIndex = 0;
+  if (position === "last") {
+    nextIndex = items.length - 1;
+  } else if (position === "next") {
+    nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % items.length;
+  } else if (position === "previous") {
+    nextIndex = currentIndex < 0 ? items.length - 1 : (currentIndex - 1 + items.length) % items.length;
+  }
+  items[nextIndex].focus();
 }
 
 function accountActionButton(label, handler, accountRefreshing, loading) {

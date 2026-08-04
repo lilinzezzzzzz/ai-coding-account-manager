@@ -1,8 +1,8 @@
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
-import { closeAddMenus } from "./components/add-menu.js?v=components";
+import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=reset-refresh-actions";
-import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=reset-refresh-actions";
+import { providerSection } from "./components/provider-section.js?v=account-action-menu";
+import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
 import {
   confirmDialog,
   promptAuthJSON,
@@ -55,11 +55,11 @@ async function boot() {
 }
 
 function setupGlobalEvents() {
-  document.addEventListener("click", closeAddMenus);
+  document.addEventListener("click", closeMenus);
   setupTooltips();
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
-      closeAddMenus();
+      closeMenus();
       hideTooltip();
     }
   });
@@ -293,8 +293,8 @@ async function updatePlanExpiration(account) {
 async function activateAccount(account) {
   const confirmed = await confirmDialog({
     title: "激活账号",
-    detail: `账号：${account.label || account.email || account.accountId}\n激活后请 reload VS Code 窗口使配置生效。`,
-    confirmText: "确认",
+    detail: `账号：${account.label || account.email || account.accountId}\n确认激活后，请 reload VS Code 窗口使配置生效。`,
+    confirmText: "确认激活",
   });
   if (!confirmed) {
     return;
@@ -312,8 +312,8 @@ async function activateAccount(account) {
 async function deleteAccount(account) {
   const confirmed = await confirmDialog({
     title: "删除账号",
-    detail: `${account.label || account.email || account.accountId}\n该操作会删除隔离凭据目录。`,
-    confirmText: "删除",
+    detail: `账号：${account.label || account.email || account.accountId}\n确认删除后，该账号的隔离凭据目录也会被删除。`,
+    confirmText: "确认删除",
     danger: true,
   });
   if (!confirmed) {

@@ -1,5 +1,5 @@
-export function closeAddMenus() {
-  document.querySelectorAll(".add-menu-trigger[aria-expanded='true']").forEach((trigger) => {
+export function closeMenus() {
+  document.querySelectorAll("[data-popup-menu-trigger][aria-expanded='true']").forEach((trigger) => {
     trigger.setAttribute("aria-expanded", "false");
   });
 }
@@ -12,6 +12,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "primary add-menu-trigger";
+  trigger.dataset.popupMenuTrigger = "true";
   const triggerIcon = document.createElement("span");
   triggerIcon.className = "add-menu-trigger-icon";
   triggerIcon.setAttribute("aria-hidden", "true");
@@ -23,7 +24,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();
     const expanded = trigger.getAttribute("aria-expanded") === "true";
-    closeAddMenus();
+    closeMenus();
     trigger.setAttribute("aria-expanded", expanded ? "false" : "true");
   });
   trigger.addEventListener("keydown", (event) => {
@@ -31,7 +32,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
       return;
     }
     event.preventDefault();
-    closeAddMenus();
+    closeMenus();
     trigger.setAttribute("aria-expanded", "true");
     focusAddMenuItem(options, event.key === "ArrowUp" ? "last" : "first");
   });
@@ -115,7 +116,7 @@ function addMenuItem(item, providerInfo, loading) {
   button.append(icon, copy);
 
   button.addEventListener("click", () => {
-    closeAddMenus();
+    closeMenus();
     item.handler();
   });
   return button;
@@ -125,7 +126,7 @@ function handleAddMenuKeydown(event, menu, trigger) {
   if (event.key === "Escape") {
     event.preventDefault();
     event.stopPropagation();
-    closeAddMenus();
+    closeMenus();
     trigger.focus();
     return;
   }
