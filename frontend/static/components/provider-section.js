@@ -2,10 +2,6 @@ import { accountCard } from "./account-card.js?v=account-action-menu";
 import { providerActions } from "./add-menu.js?v=account-action-menu";
 import { emptyState } from "./common.js?v=components";
 
-const providerExternalLinks = {
-  codex: [{ href: "https://codexradar.com/", label: "雷达" }],
-};
-
 export function providerSection({ providerInfo, accounts, loading, accountState, actions }) {
   const section = document.createElement("section");
   section.className = "provider-section";
@@ -53,20 +49,7 @@ export function providerSection({ providerInfo, accounts, loading, accountState,
 }
 
 function providerTitle(providerInfo) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "provider-title";
   const title = document.createElement("h2");
   title.textContent = providerInfo.displayName || providerInfo.id;
-  wrapper.append(title);
-  const links = providerExternalLinks[providerInfo.id] || [];
-  for (const { href, label } of links) {
-    const link = document.createElement("a");
-    link.className = "provider-title-link";
-    link.href = href;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.textContent = label;
-    wrapper.append(link);
-  }
-  return wrapper;
+  return title;
 }

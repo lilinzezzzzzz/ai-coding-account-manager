@@ -1,7 +1,7 @@
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=account-action-menu";
+import { providerSection } from "./components/provider-section.js?v=radar-topbar-link";
 import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
 import {
   confirmDialog,
