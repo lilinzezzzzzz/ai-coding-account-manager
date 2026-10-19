@@ -5,6 +5,9 @@ CREATE TABLE accounts (
     label TEXT NOT NULL,
     email TEXT,
     plan_type TEXT,
+    plan_auto_renew INTEGER NOT NULL DEFAULT 1
+        CHECK (plan_auto_renew IN (0, 1)),
+    plan_date INTEGER CHECK (plan_date IS NULL OR plan_date > 0),
     is_active INTEGER NOT NULL DEFAULT 0
         CHECK (is_active IN (0, 1)),
     created_at INTEGER NOT NULL,

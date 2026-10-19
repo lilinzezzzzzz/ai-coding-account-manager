@@ -19,7 +19,8 @@ type AccountResponse struct {
 	Label         string                 `json:"label"`
 	Email         *string                `json:"email"`
 	PlanType      *string                `json:"planType"`
-	PlanExpiresAt *int64                 `json:"planExpiresAt"`
+	PlanAutoRenew bool                   `json:"planAutoRenew"`
+	PlanDate      *int64                 `json:"planDate"`
 	IsActive      bool                   `json:"isActive"`
 	CreatedAt     int64                  `json:"createdAt"`
 	UpdatedAt     int64                  `json:"updatedAt"`
@@ -55,28 +56,42 @@ type RateLimitResetCreditResponse struct {
 	Description *string `json:"description"`
 }
 
-// UpdatePlanExpirationRequest 是更新人工维护套餐到期时间的 HTTP request。
-type UpdatePlanExpirationRequest struct {
-	PlanExpiresAt json.RawMessage `json:"planExpiresAt"`
+// UpdatePlanRequest 更新人工维护的自动续期状态和对应日期；日期可为空。
+type UpdatePlanRequest struct {
+	PlanAutoRenew json.RawMessage `json:"planAutoRenew"`
+	PlanDate      json.RawMessage `json:"planDate"`
 }
 
-// NormalizedPlanExpiresAt 返回已校验和标准化的套餐到期时间。
-func (request UpdatePlanExpirationRequest) NormalizedPlanExpiresAt() (*int64, error) {
-	if request.PlanExpiresAt == nil {
-		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 字段不能为空")
+// NormalizedPlanAutoRenew 校验布尔值，省略时默认自动续期。
+func (request UpdatePlanRequest) NormalizedPlanAutoRenew() (bool, error) {
+	if request.PlanAutoRenew == nil {
+		return true, nil
 	}
-	if string(request.PlanExpiresAt) == "null" {
+	var value bool
+	if err := json.Unmarshal(request.PlanAutoRenew, &value); err != nil || strings.TrimSpace(string(request.PlanAutoRenew)) == "null" {
+		return false, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planAutoRenew 必须为布尔值")
+	}
+	return value, nil
+}
+
+// NormalizedPlanDate 返回用户录入的 Unix 毫秒时间戳。
+func (request UpdatePlanRequest) NormalizedPlanDate() (*int64, error) {
+	return parsePlanTimestampMillis(request.PlanDate, "planDate")
+}
+
+func parsePlanTimestampMillis(raw json.RawMessage, field string) (*int64, error) {
+	if raw == nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, field+" 字段不能为空")
+	}
+	if strings.TrimSpace(string(raw)) == "null" {
 		return nil, nil
 	}
 	var value int64
-	if err := json.Unmarshal(request.PlanExpiresAt, &value); err != nil {
-		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 必须为空或正整数时间戳")
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, field+" 必须为空或正整数毫秒时间戳")
 	}
 	if value <= 0 {
-		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "planExpiresAt 必须为空或正整数时间戳")
-	}
-	if value < 100000000000 {
-		value *= 1000
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, field+" 必须为空或正整数毫秒时间戳")
 	}
 	return &value, nil
 }
@@ -162,7 +177,8 @@ func AccountEntityResponse(account entity.Account, usage *entity.UsageSnapshot) 
 		Label:         account.Label,
 		Email:         account.Email,
 		PlanType:      account.PlanType,
-		PlanExpiresAt: account.PlanExpiresAt,
+		PlanAutoRenew: account.PlanAutoRenew,
+		PlanDate:      account.PlanDate,
 		IsActive:      account.IsActive,
 		CreatedAt:     account.CreatedAt,
 		UpdatedAt:     account.UpdatedAt,

@@ -136,13 +136,14 @@ func (dao AccountDAO) UpdateProviderMetadata(ctx context.Context, providerID str
 	return nil
 }
 
-// UpdatePlanExpiresAt 更新人工维护的套餐到期时间。
-func (dao AccountDAO) UpdatePlanExpiresAt(ctx context.Context, providerID string, accountID string, planExpiresAt *int64, now int64) error {
+// UpdatePlan 原子更新人工维护的续期方式和日期。
+func (dao AccountDAO) UpdatePlan(ctx context.Context, providerID string, accountID string, autoRenew bool, planDate *int64, now int64) error {
 	result := dao.db.WithContext(ctx).
 		Model(&model.Account{}).
 		Where("provider_id = ? AND account_id = ?", providerID, accountID).
 		Updates(map[string]any{
-			"plan_expires_at": planExpiresAt,
+			"plan_auto_renew": autoRenew,
+			"plan_date":       planDate,
 			"updated_at":      now,
 		})
 	if result.Error != nil {
@@ -204,7 +205,8 @@ func accountToModel(account entity.Account) model.Account {
 		Label:         account.Label,
 		Email:         account.Email,
 		PlanType:      account.PlanType,
-		PlanExpiresAt: account.PlanExpiresAt,
+		PlanAutoRenew: account.PlanAutoRenew,
+		PlanDate:      account.PlanDate,
 		IsActive:      account.IsActive,
 		CreatedAt:     account.CreatedAt,
 		UpdatedAt:     account.UpdatedAt,
@@ -220,7 +222,8 @@ func accountFromModel(record model.Account) entity.Account {
 		Label:         record.Label,
 		Email:         record.Email,
 		PlanType:      record.PlanType,
-		PlanExpiresAt: record.PlanExpiresAt,
+		PlanAutoRenew: record.PlanAutoRenew,
+		PlanDate:      record.PlanDate,
 		IsActive:      record.IsActive,
 		CreatedAt:     record.CreatedAt,
 		UpdatedAt:     record.UpdatedAt,

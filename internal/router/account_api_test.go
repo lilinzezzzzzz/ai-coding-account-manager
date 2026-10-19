@@ -12,6 +12,7 @@ import (
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/entity"
+	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/httpcontract"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/codexruntime"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/database"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/loginrunner"
@@ -97,39 +98,124 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 	if !strings.Contains(refreshResponse.Body.String(), `"account":{"providerId":"codex","accountId":"acct-2"`) ||
 		!strings.Contains(refreshResponse.Body.String(), `"status":"ready"`) ||
 		!strings.Contains(refreshResponse.Body.String(), `"planType":"plus"`) ||
-		!strings.Contains(refreshResponse.Body.String(), `"planExpiresAt":null`) {
+		!strings.Contains(refreshResponse.Body.String(), `"planDate":null`) {
 		t.Fatalf("refresh body = %s, want acct-2 refreshed account state", refreshResponse.Body.String())
 	}
 
-	updatePlanExpirationResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan-expiration/update", `{"planExpiresAt":1767225600}`)
-	if updatePlanExpirationResponse.Code != http.StatusOK {
-		t.Fatalf("update plan expiration status = %d, body = %s", updatePlanExpirationResponse.Code, updatePlanExpirationResponse.Body.String())
-	}
-	if !strings.Contains(updatePlanExpirationResponse.Body.String(), `"planExpiresAt":1767225600000`) {
-		t.Fatalf("update plan expiration body = %s, want normalized plan expiration", updatePlanExpirationResponse.Body.String())
-	}
+}
 
-	refreshAgainResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/refresh", `{}`)
-	if refreshAgainResponse.Code != http.StatusOK {
-		t.Fatalf("refresh again status = %d, body = %s", refreshAgainResponse.Code, refreshAgainResponse.Body.String())
+func TestAccountAPIManualPlanSwitchingClearingAndRefresh(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+	decodeAccount := func(response *httptest.ResponseRecorder) httpcontract.AccountResponse {
+		t.Helper()
+		var envelope struct {
+			Code string                       `json:"code"`
+			Data httpcontract.AccountResponse `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusOK || envelope.Code != "SUCCESS" {
+			t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
+		}
+		return envelope.Data
 	}
-	if !strings.Contains(refreshAgainResponse.Body.String(), `"planExpiresAt":1767225600000`) {
-		t.Fatalf("refresh again body = %s, want manual plan expiration preserved", refreshAgainResponse.Body.String())
-	}
+	for _, scenario := range []struct {
+		name    string
+		renewal string
+		date    string
+	}{
+		{"automatic", "true", "1767225600000"},
+		{"not automatic", "false", "1767225600000"},
+		{"early automatic milliseconds", "true", "31507200000"},
+		{"early expiration milliseconds", "false", "31507200000"},
+		{"automatic date cleared", "true", "null"},
+		{"not automatic date cleared", "false", "null"},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			payload := `{"planAutoRenew":` + scenario.renewal + `,"planDate":` + scenario.date + `}`
+			account := decodeAccount(authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan/update", payload))
+			if account.PlanAutoRenew != (scenario.renewal == "true") {
+				t.Fatalf("renewal = %v, want %s", account.PlanAutoRenew, scenario.renewal)
+			}
+			expectedDate := (*int64)(nil)
+			if scenario.date != "null" {
+				var value int64
+				if err := json.Unmarshal([]byte(scenario.date), &value); err != nil {
+					t.Fatal(err)
+				}
+				expectedDate = &value
+			}
+			gotDate := account.PlanDate
+			if (gotDate == nil) != (expectedDate == nil) || (gotDate != nil && *gotDate != *expectedDate) {
+				t.Fatalf("plan date = %v, want %v", gotDate, expectedDate)
+			}
 
-	updatedListResponse := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
-	if !strings.Contains(updatedListResponse.Body.String(), `"accountId":"acct-2"`) ||
-		!strings.Contains(updatedListResponse.Body.String(), `"planType":"plus"`) ||
-		!strings.Contains(updatedListResponse.Body.String(), `"planExpiresAt":1767225600000`) {
-		t.Fatalf("updated list body = %s, want acct-2 plan metadata", updatedListResponse.Body.String())
+			// Refresh returns provider metadata but must preserve the manual plan in storage.
+			refresh := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/refresh", `{}`)
+			if refresh.Code != http.StatusOK || !strings.Contains(refresh.Body.String(), `"code":"SUCCESS"`) {
+				t.Fatalf("refresh: %s", refresh.Body.String())
+			}
+			var listed struct {
+				Data []httpcontract.AccountResponse `json:"data"`
+			}
+			response := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+			if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+				t.Fatal(err)
+			}
+			var saved *httpcontract.AccountResponse
+			for index := range listed.Data {
+				if listed.Data[index].AccountID == "acct-2" {
+					saved = &listed.Data[index]
+				}
+			}
+			if saved == nil {
+				t.Fatal("updated account missing from list")
+			}
+			before, _ := json.Marshal([]any{account.PlanAutoRenew, account.PlanDate})
+			after, _ := json.Marshal([]any{saved.PlanAutoRenew, saved.PlanDate})
+			if string(before) != string(after) {
+				t.Fatalf("manual plan changed after refresh: %s -> %s", before, after)
+			}
+		})
 	}
+}
 
-	clearPlanExpirationResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan-expiration/update", `{"planExpiresAt":null}`)
-	if clearPlanExpirationResponse.Code != http.StatusOK {
-		t.Fatalf("clear plan expiration status = %d, body = %s", clearPlanExpirationResponse.Code, clearPlanExpirationResponse.Body.String())
+func TestAccountAPIRejectsInvalidManualPlan(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+	for _, payload := range []string{
+		`{"planAutoRenew":null,"planDate":null}`,
+		`{"planAutoRenew":true}`,
+		`{"planAutoRenew":"false","planDate":null}`,
+		`{"planAutoRenew":0,"planDate":null}`,
+		`{"planAutoRenew":{},"planDate":null}`,
+		`{"planAutoRenew":false,"planDate":-1}`,
+		`{"planAutoRenew":false,"planDate":"2026-11-09"}`,
+		`{"planAutoRenew":false,"planDate":1.5}`,
+	} {
+		response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan/update", payload)
+		if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), `"code":"VALIDATION_FAILED"`) {
+			t.Fatalf("payload %s returned %d %s, want validation failure", payload, response.Code, response.Body.String())
+		}
 	}
-	if !strings.Contains(clearPlanExpirationResponse.Body.String(), `"planExpiresAt":null`) {
-		t.Fatalf("clear plan expiration body = %s, want null plan expiration", clearPlanExpirationResponse.Body.String())
+	response := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if !strings.Contains(response.Body.String(), `"planAutoRenew":false,"planDate":null`) {
+		t.Fatalf("invalid updates changed plan: %s", response.Body.String())
+	}
+}
+
+func TestAccountAPIManualPlanDefaultsToAutomatic(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+	created := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/create", `{"email":"new-plan@example.local"}`)
+	if !strings.Contains(created.Body.String(), `"planAutoRenew":true`) {
+		t.Fatalf("new account must default to automatic renewal: %s", created.Body.String())
+	}
+	response := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/plan/update", `{"planDate":1767225600000}`)
+	if !strings.Contains(response.Body.String(), `"code":"SUCCESS"`) || !strings.Contains(response.Body.String(), `"planAutoRenew":true,"planDate":1767225600000`) {
+		t.Fatalf("omitted renewal must default to true: %s", response.Body.String())
 	}
 }
 
@@ -355,9 +441,9 @@ func newAccountAPIHandlerWithRefreshError(t *testing.T, refreshErr error) (http.
 	providerRegistry := provider.NewRegistry()
 	fakeAcct2 := testAPIAccount("acct-2")
 	planType := "plus"
-	planExpiresAt := int64(1767225600000)
+	planDate := int64(1767225600000)
 	fakeAcct2.PlanType = &planType
-	fakeAcct2.PlanExpiresAt = &planExpiresAt
+	fakeAcct2.PlanDate = &planDate
 	fakeProvider := fake.New(fake.Config{
 		ID:          "codex",
 		DisplayName: "Codex Fake",

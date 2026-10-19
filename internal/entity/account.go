@@ -14,7 +14,8 @@ type Account struct {
 	Label         string
 	Email         *string
 	PlanType      *string
-	PlanExpiresAt *int64
+	PlanAutoRenew bool
+	PlanDate      *int64
 	IsActive      bool
 	CreatedAt     int64
 	UpdatedAt     int64

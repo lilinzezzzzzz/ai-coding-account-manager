@@ -49,18 +49,17 @@ export function formatDateTime(value) {
   }).format(new Date(millis));
 }
 
-export function formatPlanDate(value) {
-  const millis = normalizeEpochMillis(value);
+// 套餐日期统一使用 Unix 毫秒，不根据数值大小推断单位。
+export function formatPlanDate(milliseconds) {
   return new Intl.DateTimeFormat("zh-CN", {
     year: "numeric",
     month: "numeric",
     day: "numeric",
-  }).format(new Date(millis));
+  }).format(new Date(milliseconds));
 }
 
-export function formatDateInput(value) {
-  const millis = normalizeEpochMillis(value);
-  const date = new Date(millis);
+export function formatDateInput(milliseconds) {
+  const date = new Date(milliseconds);
   const year = date.getFullYear();
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
   const day = `${date.getDate()}`.padStart(2, "0");

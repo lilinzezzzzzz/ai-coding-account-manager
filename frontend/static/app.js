@@ -1,19 +1,19 @@
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=radar-topbar-link";
+import { providerSection } from "./components/provider-section.js?v=single-plan-date";
 import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
 import {
   confirmDialog,
   promptAuthJSON,
   promptAuthJSONFile,
+  promptPlanDialog,
   promptTextDialog,
-} from "./dialogs.js?v=split-modules";
+} from "./dialogs.js?v=single-plan-date";
 import {
   delay,
   formatDateInput,
-  isValidDateInput,
-} from "./formatters.js?v=split-modules";
+} from "./formatters.js?v=single-plan-date";
 import { hideTooltip, setupTooltips } from "./tooltip.js?v=tooltip-position";
 
 const state = {
@@ -257,36 +257,27 @@ function resetOutcomeMessage(outcome) {
   return messages[outcome] || "额度重置状态已更新";
 }
 
-async function updatePlanExpiration(account) {
+async function updatePlan(account) {
   if (state.loading) {
     return;
   }
-  const currentValue = account.planExpiresAt ? formatDateInput(account.planExpiresAt) : "";
-  const input = await promptTextDialog({
-    title: "套餐到期日",
+  const currentDate = account.planDate;
+  const input = await promptPlanDialog({
     detail: account.label || account.email || account.accountId,
-    fieldName: "planExpiresAt",
-    inputType: "text",
-    initialValue: currentValue,
-    placeholder: "YYYY-MM-DD",
-    submitText: "保存",
-    validate: (value) => (!value || isValidDateInput(value) ? "" : "套餐到期日格式无效"),
+    autoRenew: account.planAutoRenew,
+    date: currentDate ? formatDateInput(currentDate) : "",
   });
   if (input === null) {
     return;
   }
-  const value = input;
-  let planExpiresAt = null;
-  if (value) {
-    planExpiresAt = new Date(`${value}T00:00:00`).getTime();
-  }
+  const planDate = input.date ? new Date(`${input.date}T00:00:00`).getTime() : null;
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/plan-expiration/update`, {
+    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/plan/update`, {
       method: "POST",
-      body: { planExpiresAt },
+      body: { planAutoRenew: input.planAutoRenew, planDate },
     });
     await loadData();
-    showMessage(planExpiresAt === null ? "套餐到期日已清除" : "套餐到期日已更新");
+    showMessage("套餐信息已更新");
   });
 }
 
@@ -363,7 +354,7 @@ function render() {
           activateAccount,
           deleteAccount,
           resetAccountRateLimit,
-          updatePlanExpiration,
+          updatePlan,
         },
       }),
     );

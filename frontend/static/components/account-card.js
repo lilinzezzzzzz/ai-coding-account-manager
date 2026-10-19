@@ -1,4 +1,4 @@
-import { formatPlanDate, shortId } from "../formatters.js?v=split-modules";
+import { formatPlanDate, shortId } from "../formatters.js?v=single-plan-date";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
 import { closeMenus } from "./add-menu.js?v=account-action-menu";
 import { usageBlock, usageResetCredits } from "./usage-limit.js?v=account-action-menu";
@@ -13,7 +13,7 @@ export function accountCard({
   onActivate,
   onDelete,
   onReset,
-  onUpdatePlanExpiration,
+  onUpdatePlan,
 }) {
   const card = document.createElement("article");
   card.className = `account-card ${account.isActive ? "active" : ""}`;
@@ -45,7 +45,7 @@ export function accountCard({
   if (account.planType) {
     meta.append(pill(account.planType));
   }
-  meta.append(planExpirationPill(account, onUpdatePlanExpiration));
+  meta.append(planDatePill(account, onUpdatePlan));
   meta.append(pill(shortId(account.accountId), account.accountId));
   main.append(meta);
   header.append(main);
@@ -237,17 +237,23 @@ function pill(text, tooltipText) {
   return item;
 }
 
-function planExpirationPill(account, onUpdatePlanExpiration) {
-  const text = account.planExpiresAt ? formatPlanDate(account.planExpiresAt) : "YYYY-MM-DD";
-  const item = pill(text, "点击录入套餐到期日，留空可清除");
+function planDatePill(account, onUpdatePlan) {
+  const autoRenew = account.planAutoRenew;
+  const date = account.planDate;
+  const formattedDate = date ? formatPlanDate(date) : "YYYY-MM-DD";
+  const dateLabel = autoRenew ? "续期日期" : "到期日期";
+  const description = `${dateLabel}：${date ? formattedDate : "未填写"}`;
+  const item = pill(formattedDate, "点击编辑套餐信息，日期留空可清除");
+  item.setAttribute("aria-label", `编辑套餐信息，${description}`);
   item.classList.add("interactive", "plan-expiration");
+  item.dataset.autoRenew = String(autoRenew);
   item.tabIndex = 0;
   item.setAttribute("role", "button");
-  item.addEventListener("click", onUpdatePlanExpiration);
+  item.addEventListener("click", onUpdatePlan);
   item.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      onUpdatePlanExpiration();
+      onUpdatePlan();
     }
   });
   return item;

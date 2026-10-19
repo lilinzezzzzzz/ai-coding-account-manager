@@ -1,3 +1,78 @@
+import { isValidDateInput } from "./formatters.js?v=single-plan-date";
+
+let dialogSequence = 0;
+
+export function promptPlanDialog(options) {
+  const fields = document.createElement("div");
+  fields.className = "dialog-fields";
+
+  const renewalGroup = document.createElement("fieldset");
+  renewalGroup.className = "dialog-renewal-group";
+  const legend = document.createElement("legend");
+  legend.textContent = "自动续期";
+  const choices = document.createElement("div");
+  choices.className = "dialog-renewal-options";
+  renewalGroup.append(legend, choices);
+
+  const initialRenewal = options.autoRenew === false ? "false" : "true";
+  const radios = [];
+  for (const [value, text] of [["true", "是"], ["false", "否"]]) {
+    const label = document.createElement("label");
+    label.className = "dialog-radio-option";
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "planAutoRenew";
+    radio.value = value;
+    radio.checked = value === initialRenewal;
+    label.append(radio, document.createTextNode(text));
+    choices.append(label);
+    radios.push(radio);
+  }
+
+  const dateField = document.createElement("div");
+  dateField.className = "dialog-field";
+  const dateLabel = document.createElement("label");
+  dateLabel.htmlFor = "plan-date";
+  const dateInput = document.createElement("input");
+  dateInput.id = "plan-date";
+  dateInput.name = "planDate";
+  dateInput.type = "date";
+  dateInput.min = "1970-01-02";
+  dateInput.max = "9999-12-31";
+  dateInput.autocomplete = "off";
+  dateInput.value = options.date || "";
+  const hint = document.createElement("p");
+  hint.id = "plan-date-hint";
+  hint.className = "dialog-hint";
+  hint.textContent = "日期留空可清除；续期后请手动更新。";
+  dateInput.setAttribute("aria-describedby", hint.id);
+  const selectedRenewal = () => radios.find((radio) => radio.checked).value;
+  const updateDateLabel = () => {
+    const value = selectedRenewal();
+    dateLabel.textContent = value === "true" ? "续期日期" : "到期日期";
+  };
+  renewalGroup.addEventListener("change", updateDateLabel);
+  updateDateLabel();
+  dateField.append(dateLabel, dateInput, hint);
+  fields.append(renewalGroup, dateField);
+
+  return new Promise((resolve) => {
+    openFormDialog({
+      title: "套餐信息",
+      detail: options.detail || "",
+      body: fields,
+      submitText: "保存",
+      initialFocus: radios.find((radio) => radio.checked),
+      validate: () => (!dateInput.value || isValidDateInput(dateInput.value) ? "" : "日期格式无效"),
+      onSubmit: () => resolve({
+        planAutoRenew: selectedRenewal() === "true",
+        date: dateInput.value,
+      }),
+      onCancel: () => resolve(null),
+    });
+  });
+}
+
 export function promptAuthJSON(options = {}) {
   const textarea = document.createElement("textarea");
   textarea.name = "authJson";
@@ -104,7 +179,9 @@ function openFormDialog(options) {
   form.method = "dialog";
 
   const title = document.createElement("h2");
+  title.id = `app-dialog-title-${++dialogSequence}`;
   title.textContent = options.title;
+  dialog.setAttribute("aria-labelledby", title.id);
   form.append(title);
 
   if (options.detail) {
@@ -118,6 +195,7 @@ function openFormDialog(options) {
 
   const error = document.createElement("p");
   error.className = "dialog-error";
+  error.setAttribute("aria-live", "polite");
   error.hidden = true;
   form.append(error);
 

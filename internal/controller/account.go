@@ -98,30 +98,29 @@ func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, 
 	return nil
 }
 
-// UpdatePlanExpiration 更新人工维护的套餐到期时间。
-func (controller AccountController) UpdatePlanExpiration(w http.ResponseWriter, r *http.Request) error {
+// UpdatePlan 更新人工维护的套餐信息。
+func (controller AccountController) UpdatePlan(w http.ResponseWriter, r *http.Request) error {
 	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
 	if err != nil {
 		return err
 	}
-	var request httpcontract.UpdatePlanExpirationRequest
+	var request httpcontract.UpdatePlanRequest
 	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
 		return err
 	}
-	planExpiresAt, err := request.NormalizedPlanExpiresAt()
+	autoRenew, err := request.NormalizedPlanAutoRenew()
 	if err != nil {
 		return err
 	}
-	account, err := controller.accounts.UpdatePlanExpiration(r.Context(), providerID, accountID, planExpiresAt)
+	planDate, err := request.NormalizedPlanDate()
 	if err != nil {
 		return err
 	}
-	slog.InfoContext(r.Context(),
-		"account plan expiration updated",
-		"provider_id", account.ProviderID,
-		"account_id", account.AccountID,
-		"plan_expires_at_set", account.PlanExpiresAt != nil,
-	)
+	account, err := controller.accounts.UpdatePlan(r.Context(), providerID, accountID, autoRenew, planDate)
+	if err != nil {
+		return err
+	}
+	slog.InfoContext(r.Context(), "account plan updated", "provider_id", account.ProviderID, "account_id", account.AccountID)
 	httptransport.WriteOK(r.Context(), w, httpcontract.AccountEntityResponse(account, nil))
 	return nil
 }

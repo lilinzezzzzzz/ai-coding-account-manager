@@ -20,7 +20,7 @@ Codex 账号，提供浏览器管理页面，用于登录添加账号、导入�
 
 - 本地 Web 管理页，无需单独前端 dev server。
 - 支持 Codex browser 登录添加、选择 `auth.json` 文件导入、粘贴 JSON 内容导入。
-- 支持刷新账号额度、消费 reset credit 重置额度、设置套餐到期日、激活账号和删除非活动账号。
+- 支持刷新账号额度、消费 reset credit 重置额度、手工设置自动续期和续期／到期日期、激活账号和删除非活动账号。
 - 每个账号使用独立凭据目录，激活时才替换当前 `CODEX_HOME/auth.json`。
 - 提供 SQLite 持久化、SQL migration、统一 API response envelope 和请求安全校验。
 - 内置 fake provider，便于不使用真实 Codex 账号时验收前端交互。
@@ -175,6 +175,19 @@ provider 重置前也会校验最近 usage snapshot 中的 `rateLimitResetCredit
 目录。已经运行中的 VS Code/Codex 进程可能仍持有旧 token，通常需要在 VS Code 中执行
 `Developer: Reload Window`。
 
+### 手工维护套餐信息
+
+点击账号卡片上的日期，选择“自动续期：是／否”和日期，默认选择“是”；选择“是”时录入
+续期日期，选择“否”时录入到期日期，日期留空可清除。卡片只显示日期，以绿色表示自动续期、
+红色表示不自动续期；悬浮提示只显示编辑说明，日期含义见编辑弹窗。切换是／否时保留同一个
+日期。该信息由用户维护，刷新额度不会覆盖，也不会自动推算下次日期。
+
+对应的 `plan/update` 接口接收 `planAutoRenew`（`true` 或 `false`，省略时默认 `true`）和
+必填的 `planDate`（Unix 毫秒时间戳或 `null`），`planDate: null` 表示清除日期。
+套餐日期的存储、显示及接口输入均按毫秒处理，不自动识别或转换秒时间戳。
+数据库和账号响应统一使用 `planAutoRenew` / `planDate`（数据库列为 `plan_auto_renew` /
+`plan_date`）。建库脚本已收敛为当前结构，不提供旧结构升级；运行新版需使用新的 `dataDir`。
+
 ### 删除账号
 
 只能删除非活动账号。删除会移除数据库中的账号记录，并清理对应账号隔离凭据目录。
@@ -230,7 +243,7 @@ POST   /api/providers/{providerId}/accounts/create
 POST   /api/providers/{providerId}/accounts/import-current
 POST   /api/providers/{providerId}/accounts/auth-json/import
 POST   /api/providers/{providerId}/accounts/{accountId}/activate
-POST   /api/providers/{providerId}/accounts/{accountId}/plan-expiration/update
+POST   /api/providers/{providerId}/accounts/{accountId}/plan/update
 POST   /api/providers/{providerId}/accounts/{accountId}/relogin
 POST   /api/providers/{providerId}/accounts/{accountId}/refresh
 POST   /api/providers/{providerId}/accounts/{accountId}/rate-limit/reset

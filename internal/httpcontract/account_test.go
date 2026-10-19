@@ -1,6 +1,37 @@
 package httpcontract
 
-import "testing"
+import (
+	"encoding/json"
+	"strconv"
+	"testing"
+)
+
+func TestPlanDatesPreserveMilliseconds(t *testing.T) {
+	for _, value := range []int64{1, 57600000, 31507200000, 99999999999, 100000000000, 100000000001, 1794153600000, 253402214400000} {
+		t.Run(strconv.FormatInt(value, 10), func(t *testing.T) {
+			raw := json.RawMessage(strconv.FormatInt(value, 10))
+			got, err := (UpdatePlanRequest{PlanDate: raw}).NormalizedPlanDate()
+			if err != nil || got == nil {
+				t.Fatalf("input milliseconds %d rejected (error %v)", value, err)
+			}
+			if *got != value {
+				t.Fatalf("input milliseconds %d became %d", value, *got)
+			}
+		})
+	}
+}
+
+func TestPlanDateValidation(t *testing.T) {
+	for _, raw := range []json.RawMessage{nil, json.RawMessage(`0`), json.RawMessage(`-1`), json.RawMessage(`1.5`), json.RawMessage(`"1971-01-01"`), json.RawMessage(`true`)} {
+		if _, err := (UpdatePlanRequest{PlanDate: raw}).NormalizedPlanDate(); err == nil {
+			t.Fatalf("expected invalid timestamp %s to be rejected", raw)
+		}
+	}
+	value, err := (UpdatePlanRequest{PlanDate: json.RawMessage(`null`)}).NormalizedPlanDate()
+	if err != nil || value != nil {
+		t.Fatalf("null must clear the date: %v, %v", value, err)
+	}
+}
 
 func TestRateLimitResetCreditsResponseIncludesVisibleDetails(t *testing.T) {
 	title := "Full reset"

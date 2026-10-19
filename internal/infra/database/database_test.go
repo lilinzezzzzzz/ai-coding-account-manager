@@ -19,14 +19,15 @@ func TestOpenInitializesEmptyDatabase(t *testing.T) {
 	assertTableExists(t, db, "accounts")
 	assertTableExists(t, db, "usage_snapshots")
 	assertTableExists(t, db, "schema_migrations")
-	assertColumnExists(t, db, "accounts", "plan_expires_at")
+	assertColumnExists(t, db, "accounts", "plan_auto_renew")
+	assertColumnExists(t, db, "accounts", "plan_date")
 
 	var version int
 	if err := db.GORM().Model(&model.SchemaMigration{}).Select("MAX(version)").Scan(&version).Error; err != nil {
 		t.Fatalf("read schema version: %v", err)
 	}
-	if version != 2 {
-		t.Fatalf("schema version = %d, want 2", version)
+	if version != 1 {
+		t.Fatalf("schema version = %d, want 1", version)
 	}
 
 	var foreignKeys int
@@ -65,8 +66,54 @@ func TestOpenRunsMigrationsOnlyOnce(t *testing.T) {
 	if err := second.GORM().Model(&model.SchemaMigration{}).Count(&count).Error; err != nil {
 		t.Fatalf("count schema migrations: %v", err)
 	}
-	if count != 2 {
-		t.Fatalf("schema migration rows = %d, want 2", count)
+	if count != 1 {
+		t.Fatalf("schema migration rows = %d, want 1", count)
+	}
+}
+
+func TestPlanDefaultsAndConstraints(t *testing.T) {
+	db := openTestDatabase(t)
+	defer closeTestDatabase(t, db)
+	if err := db.GORM().Exec(`INSERT INTO accounts(provider_id, account_id, storage_id, label, created_at, updated_at)
+		VALUES ('codex', 'default', 'default', 'Default', 1, 1)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	var account model.Account
+	if err := db.GORM().First(&account).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !account.PlanAutoRenew || account.PlanDate != nil {
+		t.Fatalf("unexpected default plan: %+v", account)
+	}
+	for _, statement := range []string{
+		"UPDATE accounts SET plan_auto_renew = NULL",
+		"UPDATE accounts SET plan_auto_renew = 2",
+		"UPDATE accounts SET plan_date = 0",
+		"UPDATE accounts SET plan_date = -1",
+	} {
+		if err := db.GORM().Exec(statement).Error; err == nil {
+			t.Fatalf("expected constraint violation: %s", statement)
+		}
+	}
+}
+
+func TestOpenRejectsIncompatibleAccountSchema(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "incompatible.db")
+	db, err := database.Open(context.Background(), database.Config{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.GORM().Exec("ALTER TABLE accounts DROP COLUMN plan_date").Error; err != nil {
+		t.Fatal(err)
+	}
+	closeTestDatabase(t, db)
+	reopened, err := database.Open(context.Background(), database.Config{Path: path})
+	if err == nil {
+		closeTestDatabase(t, reopened)
+		t.Fatal("expected incompatible schema error")
+	}
+	if !strings.Contains(err.Error(), "initialize a new data directory") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

@@ -407,6 +407,7 @@ func (service *LoginTaskService) persistImportedAccount(ctx context.Context, acc
 func (service *LoginTaskService) normalizeImportedAccount(providerID string, account entity.Account) entity.Account {
 	now := service.now().UTC().UnixMilli()
 	account.ProviderID = providerID
+	account.PlanAutoRenew = true
 	if account.StorageID == "" {
 		account.StorageID = entity.StorageIDForAccount(account.ProviderID, account.AccountID)
 	}

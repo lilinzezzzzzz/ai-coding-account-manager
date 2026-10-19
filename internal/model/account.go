@@ -8,7 +8,8 @@ type Account struct {
 	Label         string  `gorm:"column:label"`
 	Email         *string `gorm:"column:email"`
 	PlanType      *string `gorm:"column:plan_type"`
-	PlanExpiresAt *int64  `gorm:"column:plan_expires_at"`
+	PlanAutoRenew bool    `gorm:"column:plan_auto_renew;not null"`
+	PlanDate      *int64  `gorm:"column:plan_date"`
 	IsActive      bool    `gorm:"column:is_active"`
 	CreatedAt     int64   `gorm:"column:created_at"`
 	UpdatedAt     int64   `gorm:"column:updated_at"`

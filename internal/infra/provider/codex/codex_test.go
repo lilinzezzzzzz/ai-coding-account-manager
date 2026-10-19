@@ -58,8 +58,8 @@ func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	if refreshedAccount.PlanType == nil || *refreshedAccount.PlanType != "plus" {
 		t.Fatalf("plan type = %v, want plus", refreshedAccount.PlanType)
 	}
-	if refreshedAccount.PlanExpiresAt != nil {
-		t.Fatalf("plan expires at = %v, want nil", refreshedAccount.PlanExpiresAt)
+	if refreshedAccount.PlanDate != nil {
+		t.Fatalf("plan date = %v, want nil", refreshedAccount.PlanDate)
 	}
 	if snapshot.UsedPercent == nil || *snapshot.UsedPercent != 42.5 {
 		t.Fatalf("used percent = %v", snapshot.UsedPercent)

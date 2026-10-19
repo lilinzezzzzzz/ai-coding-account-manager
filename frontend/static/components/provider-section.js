@@ -1,4 +1,4 @@
-import { accountCard } from "./account-card.js?v=account-action-menu";
+import { accountCard } from "./account-card.js?v=single-plan-date";
 import { providerActions } from "./add-menu.js?v=account-action-menu";
 import { emptyState } from "./common.js?v=components";
 
@@ -40,7 +40,7 @@ export function providerSection({ providerInfo, accounts, loading, accountState,
         onActivate: () => actions.activateAccount(account),
         onDelete: () => actions.deleteAccount(account),
         onReset: () => actions.resetAccountRateLimit(account),
-        onUpdatePlanExpiration: () => actions.updatePlanExpiration(account),
+        onUpdatePlan: () => actions.updatePlan(account),
       }),
     );
   }

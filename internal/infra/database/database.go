@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	supportedSchemaVersion = 2
+	supportedSchemaVersion = 1
 	migrationDir           = "migrations"
 )
 
@@ -114,6 +114,10 @@ func (db *DB) initialize(ctx context.Context) error {
 	}
 	if err := db.runMigrations(ctx); err != nil {
 		return err
+	}
+	migrator := db.gormDB.WithContext(ctx).Migrator()
+	if !migrator.HasColumn(&model.Account{}, "plan_auto_renew") || !migrator.HasColumn(&model.Account{}, "plan_date") {
+		return fmt.Errorf("database schema is incompatible; initialize a new data directory")
 	}
 	if err := db.quickCheck(ctx); err != nil {
 		return err

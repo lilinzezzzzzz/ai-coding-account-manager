@@ -217,10 +217,10 @@ func (service *AccountService) ImportCurrentAccount(ctx context.Context, provide
 	return AccountWithUsage{Account: persisted}, nil
 }
 
-// UpdatePlanExpiration 更新人工维护的套餐到期时间。
-func (service *AccountService) UpdatePlanExpiration(ctx context.Context, providerID string, accountID string, planExpiresAt *int64) (entity.Account, error) {
+// UpdatePlan 更新人工维护的续期方式和对应日期。
+func (service *AccountService) UpdatePlan(ctx context.Context, providerID string, accountID string, autoRenew bool, planDate *int64) (entity.Account, error) {
 	now := service.now().UTC().UnixMilli()
-	if err := service.daos.Accounts.UpdatePlanExpiresAt(ctx, providerID, accountID, planExpiresAt, now); err != nil {
+	if err := service.daos.Accounts.UpdatePlan(ctx, providerID, accountID, autoRenew, planDate, now); err != nil {
 		return entity.Account{}, err
 	}
 	return service.daos.Accounts.Get(ctx, providerID, accountID)
@@ -474,6 +474,7 @@ func (service *AccountService) persistRefreshSuccess(ctx context.Context, accoun
 func (service *AccountService) normalizeAccount(providerID string, account entity.Account) entity.Account {
 	now := service.now().UTC().UnixMilli()
 	account.ProviderID = providerID
+	account.PlanAutoRenew = true
 	if account.StorageID == "" {
 		account.StorageID = entity.StorageIDForAccount(account.ProviderID, account.AccountID)
 	}

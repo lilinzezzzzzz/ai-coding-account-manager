@@ -124,14 +124,16 @@ func TestListAllOrdersActiveFirstThenCreatedAtDescending(t *testing.T) {
 	}
 }
 
-func TestUpdateProviderMetadataPreservesPlanExpiration(t *testing.T) {
+func TestUpdateProviderMetadataPreservesManualPlan(t *testing.T) {
 	db := openDAOTestDatabase(t)
 	defer closeDAOTestDatabase(t, db)
 
 	accounts := NewAccountDAO(db.GORM())
 	account := testAccount("codex", "acct-1", false)
-	existingPlanExpiresAt := int64(1767225600000)
-	account.PlanExpiresAt = &existingPlanExpiresAt
+	existingPlanDate := int64(1767225600000)
+	account.PlanDate = &existingPlanDate
+	autoRenew := true
+	account.PlanAutoRenew = autoRenew
 	if err := accounts.Create(context.Background(), account); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -152,15 +154,29 @@ func TestUpdateProviderMetadataPreservesPlanExpiration(t *testing.T) {
 	if got.PlanType == nil || *got.PlanType != planType {
 		t.Fatalf("plan type = %v, want %s", got.PlanType, planType)
 	}
-	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != existingPlanExpiresAt {
-		t.Fatalf("plan expires at = %v, want %d", got.PlanExpiresAt, existingPlanExpiresAt)
+	if got.PlanDate == nil || *got.PlanDate != existingPlanDate {
+		t.Fatalf("plan date = %v, want %d", got.PlanDate, existingPlanDate)
+	}
+	if !got.PlanAutoRenew {
+		t.Fatalf("manual renewal metadata lost after provider refresh: %+v", got)
 	}
 	if got.UpdatedAt != 2000 {
 		t.Fatalf("updated at = %d, want 2000", got.UpdatedAt)
 	}
+	// Reimporting metadata must not clear any of the manually maintained fields.
+	if err := accounts.Upsert(context.Background(), testAccount("codex", "acct-1", false)); err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	got, err = accounts.Get(context.Background(), "codex", "acct-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.PlanAutoRenew || got.PlanDate == nil || *got.PlanDate != existingPlanDate {
+		t.Fatalf("manual plan lost after reimport: %+v", got)
+	}
 }
 
-func TestUpdatePlanExpiresAtPersistsAndClearsManualExpiration(t *testing.T) {
+func TestUpdatePlanPersistsAndClearsDate(t *testing.T) {
 	db := openDAOTestDatabase(t)
 	defer closeDAOTestDatabase(t, db)
 
@@ -169,27 +185,27 @@ func TestUpdatePlanExpiresAtPersistsAndClearsManualExpiration(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	planExpiresAt := int64(1767225600000)
-	if err := accounts.UpdatePlanExpiresAt(context.Background(), "codex", "acct-1", &planExpiresAt, 2000); err != nil {
-		t.Fatalf("UpdatePlanExpiresAt(set) error = %v", err)
+	planDate := int64(1767225600000)
+	if err := accounts.UpdatePlan(context.Background(), "codex", "acct-1", true, &planDate, 2000); err != nil {
+		t.Fatalf("UpdatePlan(set) error = %v", err)
 	}
 	got, err := accounts.Get(context.Background(), "codex", "acct-1")
 	if err != nil {
 		t.Fatalf("Get() after set error = %v", err)
 	}
-	if got.PlanExpiresAt == nil || *got.PlanExpiresAt != planExpiresAt {
-		t.Fatalf("plan expires at after set = %v, want %d", got.PlanExpiresAt, planExpiresAt)
+	if got.PlanDate == nil || *got.PlanDate != planDate {
+		t.Fatalf("plan date after set = %v, want %d", got.PlanDate, planDate)
 	}
 
-	if err := accounts.UpdatePlanExpiresAt(context.Background(), "codex", "acct-1", nil, 3000); err != nil {
-		t.Fatalf("UpdatePlanExpiresAt(clear) error = %v", err)
+	if err := accounts.UpdatePlan(context.Background(), "codex", "acct-1", true, nil, 3000); err != nil {
+		t.Fatalf("UpdatePlan(clear) error = %v", err)
 	}
 	got, err = accounts.Get(context.Background(), "codex", "acct-1")
 	if err != nil {
 		t.Fatalf("Get() after clear error = %v", err)
 	}
-	if got.PlanExpiresAt != nil {
-		t.Fatalf("plan expires at after clear = %v, want nil", got.PlanExpiresAt)
+	if got.PlanDate != nil {
+		t.Fatalf("plan date after clear = %v, want nil", got.PlanDate)
 	}
 	if got.UpdatedAt != 3000 {
 		t.Fatalf("updated at after clear = %d, want 3000", got.UpdatedAt)
