@@ -1,3 +1,4 @@
+import { setupThemeMenu } from "./components/theme-menu.js?v=theme-menu-1";
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
@@ -46,6 +47,7 @@ const elements = {
 boot();
 
 async function boot() {
+  setupThemeMenu();
   setupGlobalEvents();
   try {
     await loadData();

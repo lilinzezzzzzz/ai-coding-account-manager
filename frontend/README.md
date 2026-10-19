@@ -6,3 +6,5 @@
 - `tests/`：使用 Node 内置测试运行器的回归测试，运行 `node --test frontend/tests/*.test.mjs`（仓库根目录）。
 
 前端独立于后端 HTTP server 部署或运行，通过配置的 API 地址访问后端，不在 `localStorage`、`sessionStorage` 或 IndexedDB 中保存账号数据、token 或完整凭证。
+
+外观支持跟随系统、浅色和深色，默认跟随系统。手动主题偏好仅保存在浏览器 `localStorage` 的 `account-manager.theme` 中，选择跟随系统会清除该偏好；不保存账号数据或凭据。
