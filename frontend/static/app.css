@@ -1556,8 +1556,7 @@ h1 {
 }
 
 @media (max-width: 720px) {
-  .theme-menu-options {
-    left: 0;
-    right: auto;
+  .topbar-actions {
+    justify-content: flex-end;
   }
 }
