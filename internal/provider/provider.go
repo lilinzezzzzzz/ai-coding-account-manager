@@ -37,6 +37,7 @@ const (
 
 // Capabilities 描述 provider 支持的通用操作。
 type Capabilities struct {
+	CanExportAuthJSON                 bool
 	CanRefreshUsage                   bool
 	CanActivateAccount                bool
 	RequiresClientReloadAfterActivate bool

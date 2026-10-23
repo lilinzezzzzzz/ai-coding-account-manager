@@ -16,6 +16,7 @@ type ProviderResponse struct {
 
 // CapabilityResponse 是 provider 能力声明的 HTTP response。
 type CapabilityResponse struct {
+	CanExportAuthJSON                 bool `json:"canExportAuthJson"`
 	CanRefreshUsage                   bool `json:"canRefreshUsage"`
 	CanActivateAccount                bool `json:"canActivateAccount"`
 	RequiresClientReloadAfterActivate bool `json:"requiresClientReloadAfterActivate"`
@@ -27,6 +28,7 @@ func ProviderHTTPResponse(description provider.Description) ProviderResponse {
 		ID:          description.ID,
 		DisplayName: description.DisplayName,
 		Capabilities: CapabilityResponse{
+			CanExportAuthJSON:                 description.Capabilities.CanExportAuthJSON,
 			CanRefreshUsage:                   description.Capabilities.CanRefreshUsage,
 			CanActivateAccount:                description.Capabilities.CanActivateAccount,
 			RequiresClientReloadAfterActivate: description.Capabilities.RequiresClientReloadAfterActivate,

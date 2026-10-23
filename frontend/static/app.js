@@ -2,7 +2,8 @@ import { setupThemeMenu } from "./components/theme-menu.js?v=theme-menu-1";
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=single-plan-date";
+import { providerSection } from "./components/provider-section.js?v=copy-auth-json";
+import { copyTextFrom } from "./clipboard.js?v=copy-auth-json";
 import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
 import {
   confirmDialog,
@@ -198,6 +199,26 @@ async function refreshAccount(account, options = {}) {
   }
 }
 
+async function copyAccountAuthJSON(account) {
+  const key = accountKey(account);
+  if (state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key)) {
+    return;
+  }
+  await runAction(async () => {
+    await copyTextFrom(async () => {
+      const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/auth-json/export`, {
+        method: "POST",
+        body: {},
+      });
+      if (typeof result?.authJson !== "string" || !result.authJson.trim()) {
+        throw new Error("此账号没有可导出的登录凭据");
+      }
+      return result.authJson;
+    });
+    showMessage("已复制，请妥善保管登录凭据");
+  });
+}
+
 async function resetAccountRateLimit(account) {
   const key = accountKey(account);
   if (state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key)) {
@@ -356,6 +377,7 @@ function render() {
           activateAccount,
           deleteAccount,
           resetAccountRateLimit,
+          copyAccountAuthJSON,
           updatePlan,
         },
       }),

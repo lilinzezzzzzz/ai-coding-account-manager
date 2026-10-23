@@ -83,6 +83,25 @@ func (controller AccountController) ImportAccountAuthJSONAndRefresh(w http.Respo
 	return nil
 }
 
+// ExportAccountAuthJSON 返回用户主动请求的单账号凭据，禁止缓存和记录内容。
+func (controller AccountController) ExportAccountAuthJSON(w http.ResponseWriter, r *http.Request) error {
+	w.Header().Set("Cache-Control", "no-store")
+	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
+	if err != nil {
+		return err
+	}
+	var request struct{}
+	if err := httptransport.DecodeStrictJSON(r, &request); err != nil {
+		return err
+	}
+	authJSON, err := controller.accounts.ExportAccountAuthJSON(r.Context(), providerID, accountID)
+	if err != nil {
+		return err
+	}
+	httptransport.WriteOK(r.Context(), w, httpcontract.ExportAccountAuthJSONResponse{AuthJSON: string(authJSON)})
+	return nil
+}
+
 // ImportCurrentAccount 从当前活动 Codex 登录态导入账号。
 func (controller AccountController) ImportCurrentAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, err := httpcontract.ProviderID(r)

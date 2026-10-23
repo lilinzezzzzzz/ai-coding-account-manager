@@ -11,6 +11,11 @@ import (
 
 const maxAuthJSONBytes = 2 * 1024 * 1024
 
+// ExportAccountAuthJSONResponse 仅用于用户主动触发的单账号凭据导出。
+type ExportAccountAuthJSONResponse struct {
+	AuthJSON string `json:"authJson"`
+}
+
 // AccountResponse 是账号列表和账号操作返回的 HTTP response。
 type AccountResponse struct {
 	ProviderID    string                 `json:"providerId"`

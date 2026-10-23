@@ -107,6 +107,37 @@ func (store *Store) ValidateAccount(ctx context.Context, providerID string, stor
 	return validateAuthFile(filepath.Join(accountDir, authFileName))
 }
 
+// ReadAccountAuthJSON 读取所选账号的完整凭据，保留原始字段和格式。
+func (store *Store) ReadAccountAuthJSON(ctx context.Context, providerID string, storageID string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	accountDir, err := store.AccountCodexDir(providerID, storageID)
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Open(filepath.Join(accountDir, authFileName))
+	if err != nil {
+		return nil, fmt.Errorf("open account auth file: %w", err)
+	}
+	defer file.Close()
+	const maxAuthBytes = 2 * 1024 * 1024
+	payload, err := io.ReadAll(io.LimitReader(file, maxAuthBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read account auth file: %w", err)
+	}
+	if len(payload) > maxAuthBytes {
+		return nil, fmt.Errorf("account auth file exceeds size limit")
+	}
+	if err := validateAuthPayload(payload); err != nil {
+		return nil, fmt.Errorf("account auth file is invalid")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
 // ExportToCodexDir 把账号隔离 auth.json 写入目标 CODEX_HOME。
 func (store *Store) ExportToCodexDir(ctx context.Context, providerID string, storageID string, targetCodexDir string) error {
 	if err := ctx.Err(); err != nil {

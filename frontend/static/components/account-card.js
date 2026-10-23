@@ -13,6 +13,7 @@ export function accountCard({
   onActivate,
   onDelete,
   onReset,
+  onCopyAuthJSON,
   onUpdatePlan,
 }) {
   const card = document.createElement("article");
@@ -50,7 +51,10 @@ export function accountCard({
   main.append(meta);
   header.append(main);
   const resetCredits = usageResetCredits(account.usage);
-  header.append(accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset }));
+  header.append(accountActionMenu({
+    resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset, onCopyAuthJSON,
+    canExportAuthJSON: providerInfo.capabilities?.canExportAuthJson === true,
+  }));
   card.append(header);
 
   card.append(
@@ -83,7 +87,7 @@ function actionButton(label, handler, loading) {
   return button;
 }
 
-function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset }) {
+function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, onRefresh, onReset, onCopyAuthJSON, canExportAuthJSON }) {
   const menu = document.createElement("div");
   menu.className = "account-action-menu";
   const label = isRefreshing
@@ -139,6 +143,17 @@ function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, o
       handler: onReset,
     }),
   );
+
+  if (canExportAuthJSON) {
+    options.append(accountMenuItem({
+      label: "复制 auth.json",
+      description: "复制登录凭据，用于迁移账号",
+      icon: "⧉",
+      disabledWhenIdle: isRefreshing || isResetting,
+      loading,
+      handler: onCopyAuthJSON,
+    }));
+  }
 
   trigger.addEventListener("click", (event) => {
     event.stopPropagation();

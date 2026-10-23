@@ -42,6 +42,11 @@ static frontend.
   contract is intentionally changed.
 - Responses, errors, and logs must not include full credentials, refresh tokens,
   or secret file contents.
+  The sole response exception is a user-initiated, single-account credential
+  export through a dedicated same-origin JSON endpoint. It may return that
+  account's complete auth.json with Cache-Control: no-store. Do not include
+  credentials in ordinary account responses, errors, logs, page DOM, or browser
+  persistent storage; fetch them only for the explicit export action.
 - When behavior changes, update the smallest relevant tests or verification
   path and report exactly what was run.
 

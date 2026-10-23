@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -77,6 +78,7 @@ func (providerImpl *Provider) Describe(context.Context) (provider.Description, e
 		ID:          providerID,
 		DisplayName: providerDisplayName,
 		Capabilities: provider.Capabilities{
+			CanExportAuthJSON:                 true,
 			CanRefreshUsage:                   true,
 			CanActivateAccount:                true,
 			RequiresClientReloadAfterActivate: true,
@@ -285,6 +287,18 @@ func (providerImpl *Provider) refreshCodexHome(ctx context.Context, codexHome st
 		return nil, nil, err
 	}
 	return refreshedAccount, snapshot, nil
+}
+
+// ExportAccountAuthJSON 仅导出所选账号的隔离凭据，不读取活动 CODEX_HOME。
+func (providerImpl *Provider) ExportAccountAuthJSON(ctx context.Context, account entity.Account) ([]byte, error) {
+	payload, err := providerImpl.credentials.ReadAccountAuthJSON(ctx, providerID, account.StorageID)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeNotFound, "此账号没有可导出的登录凭据，请先登录或导入")
+	}
+	if err != nil {
+		return nil, entity.NewAppErrorWithMessage(entity.ErrorCodeUnavailable, "无法读取此账号的登录凭据，请检查凭据文件后重试")
+	}
+	return payload, nil
 }
 
 // ActivateAccount 替换活动 CODEX_HOME 的 auth.json。

@@ -41,6 +41,11 @@ type AccountAuthJSONRefreshImporter interface {
 	ImportAccountAuthJSONAndRefresh(context.Context, []byte) (*entity.Account, *entity.UsageSnapshot, error)
 }
 
+// AccountAuthJSONExporter 描述支持用户主动导出单账号凭据的 provider 可选能力。
+type AccountAuthJSONExporter interface {
+	ExportAccountAuthJSON(context.Context, entity.Account) ([]byte, error)
+}
+
 // AccountMetadataUsageRefresher 描述刷新 usage 时一并返回账号元数据的 provider 可选能力。
 type AccountMetadataUsageRefresher interface {
 	RefreshAccountWithMetadata(context.Context, entity.Account) (*entity.Account, *entity.UsageSnapshot, error)
@@ -181,6 +186,23 @@ func (service *AccountService) ImportAccountAuthJSONAndRefresh(ctx context.Conte
 		return AccountWithUsage{}, err
 	}
 	return AccountWithUsage{Account: persisted, Usage: &normalizedSnapshot}, nil
+}
+
+// ExportAccountAuthJSON 根据已保存的账号定位凭据，不接受客户端传入文件路径。
+func (service *AccountService) ExportAccountAuthJSON(ctx context.Context, providerID string, accountID string) ([]byte, error) {
+	registeredProvider, err := service.getProvider(providerID)
+	if err != nil {
+		return nil, err
+	}
+	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
+	if err != nil {
+		return nil, err
+	}
+	exporter, ok := registeredProvider.(AccountAuthJSONExporter)
+	if !ok {
+		return nil, entity.NewAppError(entity.ErrorCodeUnsupported)
+	}
+	return exporter.ExportAccountAuthJSON(ctx, account)
 }
 
 // ImportCurrentAccount 从 provider 当前活动登录态导入账号。

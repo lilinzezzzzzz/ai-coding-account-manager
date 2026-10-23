@@ -4,8 +4,54 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestReadAccountAuthJSONBoundaries(t *testing.T) {
+	store, err := NewStore(Config{RootDir: filepath.Join(t.TempDir(), "credentials"), ActiveCodexDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := store.ReadAccountAuthJSON(ctx, "codex", "../outside"); err == nil {
+		t.Fatal("path traversal must be rejected")
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := store.ReadAccountAuthJSON(cancelled, "codex", "account"); err != context.Canceled {
+		t.Fatalf("cancelled read = %v", err)
+	}
+	accountDir, err := store.AccountCodexDir("codex", "account")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(accountDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, payload string
+		valid         bool
+	}{
+		{"valid", "{\"future\":true}\n", true},
+		{"empty", "{}", false},
+		{"multiple-values", "{\"future\":true} {}", false},
+		{"oversized-valid-prefix", "{\"future\":true}" + strings.Repeat(" ", 2*1024*1024), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(accountDir, authFileName), []byte(tc.payload), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := store.ReadAccountAuthJSON(ctx, "codex", "account")
+			if tc.valid && (err != nil || string(got) != tc.payload) {
+				t.Fatal("valid credential content must remain unchanged")
+			}
+			if !tc.valid && (err == nil || got != nil) {
+				t.Fatal("invalid or oversized credentials must not be returned")
+			}
+		})
+	}
+}
 
 func TestStoreImportsActivatesAndRemovesAuth(t *testing.T) {
 	tempDir := t.TempDir()

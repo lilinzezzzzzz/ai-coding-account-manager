@@ -1,4 +1,4 @@
-import { accountCard } from "./account-card.js?v=single-plan-date";
+import { accountCard } from "./account-card.js?v=copy-auth-json";
 import { providerActions } from "./add-menu.js?v=account-action-menu";
 import { emptyState } from "./common.js?v=components";
 
@@ -40,6 +40,7 @@ export function providerSection({ providerInfo, accounts, loading, accountState,
         onActivate: () => actions.activateAccount(account),
         onDelete: () => actions.deleteAccount(account),
         onReset: () => actions.resetAccountRateLimit(account),
+        onCopyAuthJSON: () => actions.copyAccountAuthJSON(account),
         onUpdatePlan: () => actions.updatePlan(account),
       }),
     );
