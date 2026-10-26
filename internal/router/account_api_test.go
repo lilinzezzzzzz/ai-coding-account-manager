@@ -67,14 +67,6 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 		t.Fatalf("retry reset body = %s, want idempotent outcome", retryResetResponse.Body.String())
 	}
 
-	deleteActiveResponse := authenticatedRequest(t, handler, http.MethodDelete, "/api/providers/codex/accounts/acct-1", "")
-	if deleteActiveResponse.Code != http.StatusOK {
-		t.Fatalf("delete active http status = %d, want 200 envelope", deleteActiveResponse.Code)
-	}
-	if !strings.Contains(deleteActiveResponse.Body.String(), `"code":"CONFLICT"`) {
-		t.Fatalf("delete active body = %s, want conflict", deleteActiveResponse.Body.String())
-	}
-
 	activateResponse := authenticatedJSONRequest(t, handler, http.MethodPost, "/api/providers/codex/accounts/acct-2/activate", `{}`)
 	if activateResponse.Code != http.StatusOK {
 		t.Fatalf("activate status = %d, body = %s", activateResponse.Code, activateResponse.Body.String())
@@ -102,6 +94,19 @@ func TestAccountAPIListRenameActivateDeleteAndRefreshOne(t *testing.T) {
 		t.Fatalf("refresh body = %s, want acct-2 refreshed account state", refreshResponse.Body.String())
 	}
 
+}
+
+func TestAccountAPIDeletesActiveAccount(t *testing.T) {
+	handler, cleanup := newAccountAPIHandler(t)
+	defer cleanup()
+	response := authenticatedRequest(t, handler, http.MethodDelete, "/api/providers/codex/accounts/acct-1", "")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"deleted":true`) {
+		t.Fatalf("delete active account: %d %s", response.Code, response.Body.String())
+	}
+	list := authenticatedRequest(t, handler, http.MethodGet, "/api/accounts", "")
+	if strings.Contains(list.Body.String(), `"accountId":"acct-1"`) || !strings.Contains(list.Body.String(), `"accountId":"acct-2"`) {
+		t.Fatalf("accounts after delete: %s", list.Body.String())
+	}
 }
 
 func TestAccountAPIManualPlanSwitchingClearingAndRefresh(t *testing.T) {

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -25,15 +26,8 @@ func registerProviders(ctx context.Context, providerRegistry *provider.Registry,
 
 	runtime, err := runtimeResolver.Resolve(ctx)
 	if err != nil {
-		code := entity.ErrorCodeUnavailable
-		if registerErr := providerRegistry.RegisterUnavailable(provider.Description{
-			ID:          "codex",
-			DisplayName: "OpenAI Codex",
-			ErrorCode:   &code,
-		}, err); registerErr != nil {
-			return nil, fmt.Errorf("register unavailable codex provider: %w", registerErr)
-		}
-		return nil, nil
+		// 本地凭据管理不依赖 runtime；保留 provider，运行命令时再尝试发现。
+		slog.WarnContext(ctx, "codex runtime unavailable", "error", err)
 	}
 
 	credentialStore, err := credentials.NewStore(credentials.Config{

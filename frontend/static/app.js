@@ -2,7 +2,7 @@ import { setupThemeMenu } from "./components/theme-menu.js?v=theme-menu-1";
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
 import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
 import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=copy-auth-json";
+import { providerSection } from "./components/provider-section.js?v=account-removal";
 import { copyTextFrom } from "./clipboard.js?v=copy-auth-json";
 import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
 import {
@@ -325,8 +325,8 @@ async function activateAccount(account) {
 
 async function deleteAccount(account) {
   const confirmed = await confirmDialog({
-    title: "删除账号",
-    detail: `账号：${account.label || account.email || account.accountId}\n确认删除后，该账号的隔离凭据目录也会被删除。`,
+    title: account.isActive ? "删除当前活动账号" : "删除账号",
+    detail: `账号：${account.label || account.email || account.accountId}\n确认删除后，将移除管理器中的账号记录及隔离凭据。${account.isActive ? "\n此账号正在使用中。删除不会退出 Codex 客户端，也不会删除当前 CODEX_HOME 的登录凭据。" : ""}`,
     confirmText: "确认删除",
     danger: true,
   });

@@ -337,9 +337,6 @@ func (fakeProvider *Provider) RemoveAccountData(_ context.Context, account entit
 		return err
 	}
 	key := accountKey(account.ProviderID, account.AccountID)
-	if _, ok := fakeProvider.accounts[key]; !ok {
-		return entity.NewAppError(entity.ErrorCodeNotFound)
-	}
 	delete(fakeProvider.accounts, key)
 	delete(fakeProvider.usages, key)
 	return nil

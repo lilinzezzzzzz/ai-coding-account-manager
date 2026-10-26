@@ -164,7 +164,7 @@ func (controller AccountController) ActivateAccount(w http.ResponseWriter, r *ht
 	return nil
 }
 
-// DeleteAccount 删除非 active 账号。
+// DeleteAccount 删除管理器中的账号，保留客户端当前登录态。
 func (controller AccountController) DeleteAccount(w http.ResponseWriter, r *http.Request) error {
 	providerID, accountID, err := httpcontract.ProviderAndAccountID(r)
 	if err != nil {

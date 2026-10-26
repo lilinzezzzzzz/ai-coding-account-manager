@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,45 @@ import (
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/infra/credentials"
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/provider"
 )
+
+func TestProviderDiscoversRuntimeAfterStartupFailure(t *testing.T) {
+	ctx := context.Background()
+	root := t.TempDir()
+	store := newTestStore(t, root, filepath.Join(root, "active"))
+	installed := false
+	client := &fakeCodexClient{}
+	clientCalls := 0
+	codexProvider, err := New(Config{
+		Credentials: store,
+		ResolveBin: func(context.Context) (string, error) {
+			if !installed {
+				return "", errors.New("runtime missing")
+			}
+			return "installed-codex", nil
+		},
+		ClientFactory: func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+			clientCalls++
+			if cfg.Bin != "installed-codex" {
+				t.Fatalf("unexpected runtime %q", cfg.Bin)
+			}
+			return client, nil
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := codexProvider.startClient(ctx, root); err == nil || clientCalls != 0 {
+		t.Fatal("missing runtime must fail before starting a client")
+	}
+	installed = true
+	if got, err := codexProvider.startClient(ctx, root); err != nil || got != client {
+		t.Fatalf("runtime recovery: %v", err)
+	}
+	description, err := codexProvider.Describe(ctx)
+	if err != nil || description.Status != provider.StatusAvailable || description.ErrorCode != nil {
+		t.Fatalf("recovered description: %+v, %v", description, err)
+	}
+}
 
 func TestProviderRefreshesAndActivatesAccount(t *testing.T) {
 	tempDir := t.TempDir()
@@ -483,6 +523,7 @@ func (client *fakeCodexClient) assertAccountReadRefreshToken(t *testing.T, want 
 func newTestProvider(t *testing.T, store *credentials.Store, factory ClientFactory) *Provider {
 	t.Helper()
 	codexProvider, err := New(Config{
+		Bin:           "test-codex",
 		Credentials:   store,
 		ClientFactory: factory,
 		Now: func() time.Time {
@@ -527,4 +568,40 @@ func int64Ptr(value int64) *int64 {
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+func TestProviderDescribeDoesNotWaitForAppServerStartup(t *testing.T) {
+	root := t.TempDir()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	startupDone := make(chan error, 1)
+	codexProvider := newTestProvider(t, newTestStore(t, root, filepath.Join(root, "active")), func(context.Context, appserver.Config) (appServerClient, error) {
+		close(started)
+		<-release
+		return &fakeCodexClient{}, nil
+	})
+	go func() {
+		_, err := codexProvider.startClient(context.Background(), root)
+		startupDone <- err
+	}()
+	<-started
+	described := make(chan struct{})
+	go func() {
+		_, _ = codexProvider.Describe(context.Background())
+		close(described)
+	}()
+	timedOut := false
+	select {
+	case <-described:
+	case <-time.After(time.Second):
+		timedOut = true
+	}
+	close(release)
+	if err := <-startupDone; err != nil {
+		t.Fatal(err)
+	}
+	<-described
+	if timedOut {
+		t.Fatal("provider description waited for app-server startup")
+	}
 }

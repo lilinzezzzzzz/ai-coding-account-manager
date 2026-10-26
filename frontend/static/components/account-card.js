@@ -70,8 +70,6 @@ export function accountCard({
   }
   const deleteButton = accountActionButton("删除", onDelete, isBusy, loading);
   deleteButton.className = "danger";
-  deleteButton.dataset.disabledWhenIdle = `${isBusy || account.isActive}`;
-  deleteButton.disabled = loading || deleteButton.dataset.disabledWhenIdle === "true";
   actions.append(deleteButton);
   card.append(actions);
 

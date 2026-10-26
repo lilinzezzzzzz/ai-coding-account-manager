@@ -30,6 +30,52 @@ func TestNormalizeUsageSnapshotConvertsResetsAtSecondsToMillis(t *testing.T) {
 	}
 }
 
+func TestDeleteAccountKeepsRecordWhenCredentialCleanupFails(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, database.Config{Path: filepath.Join(t.TempDir(), "state.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	daos := dao.NewDAOs(db.GORM())
+	account := entity.Account{ProviderID: "codex", AccountID: "cleanup-failure", StorageID: "cleanup-failure", Label: "test", IsActive: true}
+	if err := daos.Accounts.Create(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	cleanupErr := errors.New("cannot remove isolated credentials")
+	registeredProvider := &failingAccountCleanupProvider{Provider: fake.New(fake.Config{ID: "codex"}), err: cleanupErr}
+	registry := provider.NewRegistry()
+	if err := registry.Register(ctx, registeredProvider); err != nil {
+		t.Fatal(err)
+	}
+	activation := NewAccountActivationCoordinator()
+	accounts := NewAccountService(dao.NewUnitOfWork(db.GORM()), daos, registry, activation)
+	if err := accounts.DeleteAccount(ctx, account.ProviderID, account.AccountID); !errors.Is(err, cleanupErr) {
+		t.Fatalf("delete error = %v, want cleanup failure", err)
+	}
+	persisted, err := daos.Accounts.Get(ctx, account.ProviderID, account.AccountID)
+	if err != nil || !persisted.IsActive {
+		t.Fatalf("failed cleanup changed account: %+v, %v", persisted, err)
+	}
+	if !activation.tryAcquire() {
+		t.Fatal("delete did not release activation coordinator")
+	}
+	activation.release()
+	registeredProvider.err = nil
+	if err := accounts.DeleteAccount(ctx, account.ProviderID, account.AccountID); err != nil {
+		t.Fatalf("retry deletion: %v", err)
+	}
+}
+
+type failingAccountCleanupProvider struct {
+	*fake.Provider
+	err error
+}
+
+func (failing *failingAccountCleanupProvider) RemoveAccountData(context.Context, entity.Account) error {
+	return failing.err
+}
+
 func TestResetAccountRateLimitSkipsProviderWhenNoCreditAvailable(t *testing.T) {
 	ctx := context.Background()
 	appDB, err := database.Open(ctx, database.Config{

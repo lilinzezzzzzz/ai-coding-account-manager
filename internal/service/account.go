@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lilinzezzzzzz/ai-coding-account-manager/internal/dao"
@@ -69,6 +70,8 @@ type AccountService struct {
 	providers  *provider.Registry
 	now        func() time.Time
 	activation *AccountActivationCoordinator
+	// accountOperations 防止删除与同账号的凭据刷新、额度重置交错执行。
+	accountOperations sync.Map
 }
 
 // NewAccountService 创建账号 service。
@@ -274,8 +277,18 @@ func (service *AccountService) ActivateAccount(ctx context.Context, providerID s
 	return service.daos.Accounts.Get(ctx, providerID, accountID)
 }
 
-// DeleteAccount 删除非 active 账号。
+// DeleteAccount 删除管理器中的账号及隔离凭据，保留客户端当前登录态。
 func (service *AccountService) DeleteAccount(ctx context.Context, providerID string, accountID string) error {
+	release, err := service.beginAccountOperation(providerID, accountID)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := service.activation.acquire(ctx); err != nil {
+		return err
+	}
+	defer service.activation.release()
+
 	registeredProvider, err := service.getProvider(providerID)
 	if err != nil {
 		return err
@@ -284,19 +297,22 @@ func (service *AccountService) DeleteAccount(ctx context.Context, providerID str
 	if err != nil {
 		return err
 	}
-	if account.IsActive {
-		return entity.NewAppErrorWithMessage(entity.ErrorCodeConflict, "活动账号不能删除")
-	}
-	if err := service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
-		return daos.Accounts.Delete(ctx, providerID, accountID)
-	}); err != nil {
+	// 先清理隔离数据，失败时保留账号记录，用户可以重试。
+	if err := registeredProvider.RemoveAccountData(ctx, account); err != nil {
 		return err
 	}
-	return registeredProvider.RemoveAccountData(ctx, account)
+	return service.uow.WithinTransaction(ctx, func(daos dao.DAOs) error {
+		return daos.Accounts.Delete(ctx, providerID, accountID)
+	})
 }
 
 // RefreshAccount 刷新单个账号状态。
 func (service *AccountService) RefreshAccount(ctx context.Context, providerID string, accountID string) (RefreshResult, error) {
+	release, err := service.beginAccountOperation(providerID, accountID)
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	defer release()
 	account, err := service.daos.Accounts.Get(ctx, providerID, accountID)
 	if err != nil {
 		return RefreshResult{}, err
@@ -310,6 +326,11 @@ func (service *AccountService) ResetAccountRateLimit(ctx context.Context, provid
 	if idempotencyKey == "" || len(idempotencyKey) > 128 {
 		return ResetRateLimitResult{}, entity.NewAppErrorWithMessage(entity.ErrorCodeValidationFailed, "idempotencyKey 无效")
 	}
+	release, err := service.beginAccountOperation(providerID, accountID)
+	if err != nil {
+		return ResetRateLimitResult{}, err
+	}
+	defer release()
 	registeredProvider, err := service.getProvider(providerID)
 	if err != nil {
 		return ResetRateLimitResult{}, err
@@ -649,4 +670,12 @@ func logRefreshFailure(ctx context.Context, account entity.Account, code *entity
 
 func accountKey(providerID string, accountID string) string {
 	return providerID + "\x00" + accountID
+}
+
+func (service *AccountService) beginAccountOperation(providerID string, accountID string) (func(), error) {
+	key := accountKey(providerID, accountID)
+	if _, busy := service.accountOperations.LoadOrStore(key, struct{}{}); busy {
+		return nil, entity.NewAppError(entity.ErrorCodeOperationInProgress)
+	}
+	return func() { service.accountOperations.Delete(key) }, nil
 }

@@ -1,4 +1,4 @@
-import { accountCard } from "./account-card.js?v=copy-auth-json";
+import { accountCard } from "./account-card.js?v=account-removal";
 import { providerActions } from "./add-menu.js?v=account-action-menu";
 import { emptyState } from "./common.js?v=components";
 

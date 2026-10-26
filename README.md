@@ -2,7 +2,7 @@
 
 本项目是一个本地运行的 AI coding 工具多账号管理器。当前主要面向 OpenAI
 Codex 账号，提供浏览器管理页面，用于登录添加账号、导入凭据、查看额度、重置额度、
-刷新状态、切换活动账号和删除非活动账号。
+刷新状态、切换活动账号和删除账号。
 
 服务默认只监听本机 loopback 地址，不设计为公网、局域网或多用户系统。SQLite 只保存
 账号元数据和 usage snapshot；Codex `auth.json` 保存在账号隔离凭据目录中，不写入
@@ -20,7 +20,7 @@ Codex 账号，提供浏览器管理页面，用于登录添加账号、导入�
 
 - 本地 Web 管理页，无需单独前端 dev server。
 - 支持 Codex browser 登录添加、选择 `auth.json` 文件导入、粘贴 JSON 内容导入。
-- 支持刷新账号额度、消费 reset credit 重置额度、手工设置自动续期和续期／到期日期、激活账号和删除非活动账号。
+- 支持刷新账号额度、消费 reset credit 重置额度、手工设置自动续期和续期／到期日期、激活账号和删除账号。
 - 每个账号使用独立凭据目录，激活时才替换当前 `CODEX_HOME/auth.json`。
 - 提供 SQLite 持久化、SQL migration、统一 API response envelope 和请求安全校验。
 - 内置 fake provider，便于不使用真实 Codex 账号时验收前端交互。
@@ -134,6 +134,21 @@ Compose 同样只支持单副本运行；不要对当前服务执行多副本扩
 除 `CODEX_HOME` 作为外部工具约定的 fallback 外，项目不再使用
 `AI_CODING_ACCOUNT_MANAGER_*` 环境变量作为正式配置入口。
 
+Codex runtime 按以下顺序发现，候选校验失败后继续尝试下一个：
+
+1. `codexBin` 显式指定的可执行文件。
+2. macOS 的 `/Applications`、`~/Applications` 中桌面应用内置的 CLI：
+   `Codex.app/Contents/Resources/codex` 或
+   `ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`。
+3. 当前进程 `PATH` 中的 `codex`，作为桌面 CLI 不可用时的回退。
+
+自动发现不扫描 VS Code 或 Cursor 扩展。只安装桌面应用时，无需把内置 CLI 加入
+终端 `PATH`；其他安装位置可以通过 `codexBin` 指定。每个候选需要在 2 秒内完成
+`--version`、`login --help`、`app-server --help` 校验。日志中的
+`codex runtime selected` 记录选中的来源和完整路径，
+`codex runtime validation failed` 记录候选路径及失败的命令、退出状态或超时原因，
+不记录 CLI 输出或登录凭据。
+
 ## 使用说明
 
 ### 登录添加
@@ -190,7 +205,10 @@ provider 重置前也会校验最近 usage snapshot 中的 `rateLimitResetCredit
 
 ### 删除账号
 
-只能删除非活动账号。删除会移除数据库中的账号记录，并清理对应账号隔离凭据目录。
+活动和非活动账号均可删除，Codex runtime 不可用时也可以删除。删除会清理对应账号隔离凭据目录，并移除数据库中的账号记录；凭据清理失败时保留记录供重试。删除活动账号不会退出 Codex 客户端，也不会删除当前 `CODEX_HOME/auth.json`。
+
+同一账号的删除、刷新和额度重置操作互斥；操作进行中再次请求会返回
+`OPERATION_IN_PROGRESS`，请等待完成后重试。不同账号仍可并行刷新。
 
 ## 数据目录
 
@@ -307,7 +325,7 @@ docker compose build
 - reset credit 大于 0 的账号可以完成额度重置；reset credit 为 0 时前端按钮不可点击，
   后端也拒绝直接重置。
 - 激活账号后，VS Code reload 后 Codex 使用目标账号。
-- 删除非活动账号后，对应 `.credentials` 子目录被清理。
+- 删除账号后，对应 `.credentials` 子目录被清理；删除活动账号保留当前 `CODEX_HOME/auth.json`。
 - `git status` 不出现凭据文件。
 
 ## 安全边界
