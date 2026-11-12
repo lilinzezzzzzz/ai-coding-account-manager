@@ -56,6 +56,51 @@ node --test frontend/tests/*.test.mjs
 进入目录才会自动切换。Node.js 用于前端测试和 JavaScript 语法检查，应用启动无需 npm
 安装或前端构建。
 
+### zsh 进入项目时自动切换 Node.js
+
+在其他机器上，先安装并加载 [nvm](https://github.com/nvm-sh/nvm#installing-and-updating)，
+再在项目根目录执行一次 `nvm install`，安装 `.nvmrc` 指定的版本。
+
+将以下内容添加到 `~/.zshrc` 中，放在现有 nvm 和 mise 初始化之后。将 `project_dir`
+改为这台机器上仓库的实际绝对路径；示例使用 `$HOME/Developer/ai-coding-account-manager`。
+如果已经配置过此项目的自动切换钩子，无需重复添加。
+
+```zsh
+_use_account_manager_node() {
+  local project_dir="$HOME/Developer/ai-coding-account-manager"
+  [[ "$PWD" == "$project_dir" || "$PWD" == "$project_dir/"* ]] || return 0
+  [[ -r "$project_dir/.nvmrc" ]] || return 0
+  (( $+functions[nvm] )) || return 0
+
+  nvm use --silent || return
+
+  # 如果已有 mise/nvm 工具优先级函数，保留其行为。
+  if (( $+functions[_prefer_project_node_tools] )); then
+    _prefer_project_node_tools
+  fi
+}
+
+autoload -Uz add-zsh-hook
+add-zsh-hook chpwd _use_account_manager_node
+_use_account_manager_node
+```
+
+重新打开终端，或执行 `source ~/.zshrc`，然后进入项目验证（路径同样需要替换）：
+
+```zsh
+cd "$HOME/Developer/ai-coding-account-manager"
+cat .nvmrc
+node --version
+node -p process.execPath
+```
+
+`node --version` 应与 `.nvmrc` 一致（输出多一个 `v` 前缀），实际可执行文件应位于
+nvm 的版本目录。进入项目子目录时也会触发切换；新终端直接在项目目录启动时，末尾的
+函数调用会立即应用版本。钩子不会自动安装缺失的版本；如果提示版本未安装，在项目根
+目录执行 `nvm install` 后重新进入即可。离开项目时不主动恢复其他 Node.js 版本。
+
+该配置保存在本机 `~/.zshrc`，不会随仓库自动同步；每台机器需单独配置。
+
 ## 快速开始
 
 默认监听地址是 `127.0.0.1:43127`。
