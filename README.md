@@ -31,7 +31,9 @@ Codex 账号，提供浏览器管理页面，用于登录添加账号、导入�
 
 ## 开发环境
 
-项目使用 `mise` 固定 Go 工具链版本。安装并启用 `mise` 后，在项目目录执行：
+项目使用 `mise` 管理 Go 工具链，使用 `nvm` 管理 Node.js 版本。
+
+安装并启用 `mise` 后，在项目目录执行：
 
 ```bash
 mise install
@@ -40,6 +42,19 @@ go version
 
 `mise.toml` 会自动选择项目需要的 Go 版本。不建议依赖 Homebrew 全局 Go 版本；项目内以
 `mise` 激活的 Go 为准。
+
+Node.js 版本固定在 [`.nvmrc`](.nvmrc)。安装并加载 `nvm` 后，在项目根目录执行：
+
+```bash
+nvm install
+nvm use
+node --version
+node --test frontend/tests/*.test.mjs
+```
+
+后续进入项目时执行 `nvm use` 即可切换到项目版本；只有配置了 shell 自动切换钩子时，
+进入目录才会自动切换。Node.js 用于前端测试和 JavaScript 语法检查，应用启动无需 npm
+安装或前端构建。
 
 ## 快速开始
 
