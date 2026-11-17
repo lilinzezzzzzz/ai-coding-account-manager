@@ -1,6 +1,6 @@
 export function emptyState(title, detail) {
   const section = document.createElement("section");
-  section.className = "empty-state";
+  section.className = "empty-state empty card";
   const heading = document.createElement("h2");
   heading.textContent = title;
   const text = document.createElement("p");

@@ -37,6 +37,7 @@ export function promptPlanDialog(options) {
   dateInput.id = "plan-date";
   dateInput.name = "planDate";
   dateInput.type = "date";
+  dateInput.className = "form-control";
   dateInput.min = "1970-01-02";
   dateInput.max = "9999-12-31";
   dateInput.autocomplete = "off";
@@ -76,6 +77,8 @@ export function promptPlanDialog(options) {
 export function promptAuthJSON(options = {}) {
   const textarea = document.createElement("textarea");
   textarea.name = "authJson";
+  textarea.className = "form-control";
+  textarea.setAttribute("aria-label", "auth.json 内容");
   textarea.rows = 14;
   textarea.autocomplete = "off";
   textarea.spellcheck = false;
@@ -97,6 +100,8 @@ export function promptAuthJSON(options = {}) {
 export function promptAuthJSONFile(options = {}) {
   const input = document.createElement("input");
   input.name = "authJsonFile";
+  input.className = "form-control";
+  input.setAttribute("aria-label", "auth.json 文件");
   input.type = "file";
   input.accept = ".json,application/json";
   return new Promise((resolve) => {
@@ -128,6 +133,8 @@ export function promptAuthJSONFile(options = {}) {
 export function promptTextDialog(options) {
   const input = document.createElement("input");
   input.name = options.fieldName;
+  input.className = "form-control";
+  input.setAttribute("aria-label", options.title);
   input.type = options.inputType || "text";
   input.autocomplete = options.autocomplete || "off";
   input.placeholder = options.placeholder || "";
@@ -203,12 +210,14 @@ function openFormDialog(options) {
   actions.className = "dialog-actions";
   const cancelButton = document.createElement("button");
   cancelButton.type = "button";
+  cancelButton.className = "btn";
   cancelButton.textContent = "取消";
   const submitButton = document.createElement("button");
   submitButton.type = "submit";
+  submitButton.className = "btn btn-primary";
   submitButton.textContent = options.submitText || "确定";
   if (options.submitDanger) {
-    submitButton.classList.add("danger");
+    submitButton.className = "danger btn btn-danger";
   }
   actions.append(cancelButton, submitButton);
   form.append(actions);
@@ -258,7 +267,7 @@ function openFormDialog(options) {
     }
   });
   dialog.showModal();
-  const initialFocus = options.initialFocus || dialog.querySelector("button[type='submit']");
+  const initialFocus = options.initialFocus || (options.submitDanger ? cancelButton : submitButton);
   if (initialFocus) {
     initialFocus.focus();
   }

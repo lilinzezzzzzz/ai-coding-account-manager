@@ -1,4 +1,4 @@
-import { closeMenus } from "./add-menu.js?v=account-action-menu";
+import { closeMenus } from "./add-menu.js?v=tabler-1";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
 
 const modes = [
@@ -25,20 +25,20 @@ export function setupThemeMenu() {
   if (!container) return;
   const trigger = document.createElement("button");
   trigger.type = "button";
-  trigger.className = "theme-menu-trigger";
+  trigger.className = "theme-menu-trigger btn btn-icon btn-outline-secondary";
   trigger.dataset.popupMenuTrigger = "true";
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", "false");
   trigger.setAttribute("aria-controls", "theme-options");
   const menu = document.createElement("div");
   menu.id = "theme-options";
-  menu.className = "theme-menu-options";
+  menu.className = "theme-menu-options dropdown-menu";
   menu.setAttribute("role", "menu");
   menu.setAttribute("aria-label", "外观");
   const items = modes.map((mode) => {
     const item = document.createElement("button");
     item.type = "button";
-    item.className = "theme-menu-item";
+    item.className = "theme-menu-item dropdown-item";
     item.setAttribute("role", "menuitemradio");
     item.tabIndex = -1;
     const label = document.createElement("span");

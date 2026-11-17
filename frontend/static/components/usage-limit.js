@@ -3,7 +3,7 @@ import { setTooltip } from "../tooltip.js?v=tooltip-position";
 
 export function usageBlock({ usage }) {
   const wrapper = document.createElement("div");
-  wrapper.className = "usage";
+  wrapper.className = "usage card-body";
   const limits = usageLimitItems(usage);
   if (limits.length === 0) {
     const empty = document.createElement("div");
@@ -197,14 +197,14 @@ function usageLimitBlock(item) {
   section.append(header);
 
   const progress = document.createElement("div");
-  progress.className = "usage-progress";
+  progress.className = "usage-progress progress";
   progress.setAttribute("role", "meter");
   progress.setAttribute("aria-label", `${item.label}剩余额度`);
   progress.setAttribute("aria-valuemin", "0");
   progress.setAttribute("aria-valuemax", "100");
   progress.setAttribute("aria-valuenow", `${Math.round(item.remainingPercent)}`);
   const bar = document.createElement("div");
-  bar.className = "usage-progress-bar";
+  bar.className = "usage-progress-bar progress-bar";
   bar.style.width = `${item.remainingPercent}%`;
   progress.append(bar);
   section.append(progress);

@@ -11,7 +11,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
   menu.className = "add-menu";
   const trigger = document.createElement("button");
   trigger.type = "button";
-  trigger.className = "primary add-menu-trigger";
+  trigger.className = "primary add-menu-trigger btn btn-primary";
   trigger.dataset.popupMenuTrigger = "true";
   const triggerIcon = document.createElement("span");
   triggerIcon.className = "add-menu-trigger-icon";
@@ -39,7 +39,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
   menu.append(trigger);
 
   const options = document.createElement("div");
-  options.className = "add-menu-options";
+  options.className = "add-menu-options dropdown-menu";
   options.setAttribute("role", "menu");
   options.setAttribute("aria-label", "添加账号");
   options.append(
@@ -97,7 +97,7 @@ export function providerActions({ providerInfo, loading, onLogin, onImportFile, 
 function addMenuItem(item, providerInfo, loading) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "add-menu-item";
+  button.className = "add-menu-item dropdown-item";
   button.setAttribute("role", "menuitem");
   button.dataset.disabledWhenIdle = `${providerInfo.status !== "available"}`;
   button.disabled = loading || button.dataset.disabledWhenIdle === "true";

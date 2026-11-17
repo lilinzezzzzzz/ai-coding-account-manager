@@ -1,17 +1,17 @@
-import { setupThemeMenu } from "./components/theme-menu.js?v=theme-menu-1";
+import { setupThemeMenu } from "./components/theme-menu.js?v=tabler-1";
 import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
-import { closeMenus } from "./components/add-menu.js?v=account-action-menu";
-import { emptyState } from "./components/common.js?v=components";
-import { providerSection } from "./components/provider-section.js?v=account-removal";
+import { closeMenus } from "./components/add-menu.js?v=tabler-1";
+import { emptyState } from "./components/common.js?v=tabler-1";
+import { providerSection } from "./components/provider-section.js?v=tabler-1";
 import { copyTextFrom } from "./clipboard.js?v=copy-auth-json";
-import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=account-action-menu";
+import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=tabler-1";
 import {
   confirmDialog,
   promptAuthJSON,
   promptAuthJSONFile,
   promptPlanDialog,
   promptTextDialog,
-} from "./dialogs.js?v=single-plan-date";
+} from "./dialogs.js?v=tabler-1";
 import {
   delay,
   formatDateInput,

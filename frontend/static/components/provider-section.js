@@ -1,6 +1,6 @@
-import { accountCard } from "./account-card.js?v=account-removal";
-import { providerActions } from "./add-menu.js?v=account-action-menu";
-import { emptyState } from "./common.js?v=components";
+import { accountCard } from "./account-card.js?v=tabler-1";
+import { providerActions } from "./add-menu.js?v=tabler-1";
+import { emptyState } from "./common.js?v=tabler-1";
 
 export function providerSection({ providerInfo, accounts, loading, accountState, actions }) {
   const section = document.createElement("section");
@@ -8,7 +8,14 @@ export function providerSection({ providerInfo, accounts, loading, accountState,
 
   const header = document.createElement("div");
   header.className = "provider-header";
-  header.append(providerTitle(providerInfo));
+  const heading = document.createElement("div");
+  heading.className = "provider-heading";
+  heading.append(providerTitle(providerInfo));
+  const count = document.createElement("span");
+  count.className = "provider-count badge";
+  count.textContent = `${accounts.length} 个账号`;
+  heading.append(count);
+  header.append(heading);
   header.append(
     providerActions({
       providerInfo,

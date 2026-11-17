@@ -1,7 +1,7 @@
 import { formatPlanDate, shortId } from "../formatters.js?v=single-plan-date";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
-import { closeMenus } from "./add-menu.js?v=account-action-menu";
-import { usageBlock, usageResetCredits } from "./usage-limit.js?v=account-action-menu";
+import { closeMenus } from "./add-menu.js?v=tabler-1";
+import { usageBlock, usageResetCredits } from "./usage-limit.js?v=tabler-1";
 
 export function accountCard({
   account,
@@ -17,14 +17,14 @@ export function accountCard({
   onUpdatePlan,
 }) {
   const card = document.createElement("article");
-  card.className = `account-card ${account.isActive ? "active" : ""}`;
+  card.className = `account-card card ${account.isActive ? "active" : ""}`;
   const isBusy = isRefreshing || isResetting;
   if (isRefreshing || isResetting) {
     card.setAttribute("aria-busy", "true");
   }
 
-  const header = document.createElement("div");
-  header.className = "account-card-header";
+  const header = document.createElement("header");
+  header.className = "account-card-header card-header";
 
   const main = document.createElement("div");
   main.className = "account-main";
@@ -35,7 +35,7 @@ export function accountCard({
   name.append(title);
   if (account.isActive) {
     const activeBadge = document.createElement("span");
-    activeBadge.className = "active-badge";
+    activeBadge.className = "active-badge badge bg-blue-lt";
     activeBadge.textContent = "当前";
     name.append(activeBadge);
   }
@@ -63,13 +63,13 @@ export function accountCard({
     }),
   );
 
-  const actions = document.createElement("div");
-  actions.className = "account-actions";
+  const actions = document.createElement("footer");
+  actions.className = "account-actions card-footer";
   if (providerInfo.capabilities && providerInfo.capabilities.canActivateAccount && !account.isActive) {
     actions.append(accountActionButton("激活", onActivate, isBusy, loading));
   }
   const deleteButton = accountActionButton("删除", onDelete, isBusy, loading);
-  deleteButton.className = "danger";
+  deleteButton.className = "danger btn btn-sm btn-outline-danger";
   actions.append(deleteButton);
   card.append(actions);
 
@@ -79,6 +79,7 @@ export function accountCard({
 function actionButton(label, handler, loading) {
   const button = document.createElement("button");
   button.type = "button";
+  button.className = "btn btn-sm btn-outline-primary";
   button.textContent = label;
   button.disabled = loading;
   button.addEventListener("click", handler);
@@ -96,7 +97,7 @@ function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, o
 
   const trigger = document.createElement("button");
   trigger.type = "button";
-  trigger.className = "account-refresh-button account-action-menu-trigger";
+  trigger.className = "account-refresh-button account-action-menu-trigger btn btn-icon btn-ghost-secondary";
   trigger.classList.toggle("is-refreshing", isRefreshing);
   trigger.setAttribute("aria-label", label);
   trigger.setAttribute("aria-busy", `${isRefreshing || isResetting}`);
@@ -114,7 +115,7 @@ function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, o
   menu.append(trigger);
 
   const options = document.createElement("div");
-  options.className = "account-action-menu-options";
+  options.className = "account-action-menu-options dropdown-menu";
   options.setAttribute("role", "menu");
   options.setAttribute("aria-label", "账号操作");
   options.append(
@@ -176,7 +177,7 @@ function accountActionMenu({ resetCredits, loading, isRefreshing, isResetting, o
 function accountMenuItem({ label, description, icon, disabledWhenIdle, loading, handler }) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "account-action-menu-item";
+  button.className = "account-action-menu-item dropdown-item";
   button.setAttribute("role", "menuitem");
   button.dataset.disabledWhenIdle = `${disabledWhenIdle}`;
   button.disabled = loading || button.dataset.disabledWhenIdle === "true";
@@ -242,7 +243,7 @@ function accountActionButton(label, handler, accountRefreshing, loading) {
 
 function pill(text, tooltipText) {
   const item = document.createElement("span");
-  item.className = "pill";
+  item.className = "pill badge";
   item.textContent = text;
   if (tooltipText) {
     setTooltip(item, tooltipText);
