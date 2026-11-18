@@ -1,4 +1,4 @@
-import { closeMenus } from "./add-menu.js?v=tabler-1";
+import { setupPopupMenu } from "./popup-menu.js?v=frontend-cleanup-1";
 import { setTooltip } from "../tooltip.js?v=tooltip-position";
 
 const modes = [
@@ -20,27 +20,18 @@ function icon(paths) {
   return svg;
 }
 
-export function setupThemeMenu() {
-  const container = document.querySelector("#theme-menu");
-  if (!container) return;
+export function setupThemeMenu(container) {
   const trigger = document.createElement("button");
   trigger.type = "button";
   trigger.className = "theme-menu-trigger btn btn-icon btn-outline-secondary";
-  trigger.dataset.popupMenuTrigger = "true";
-  trigger.setAttribute("aria-haspopup", "menu");
-  trigger.setAttribute("aria-expanded", "false");
-  trigger.setAttribute("aria-controls", "theme-options");
   const menu = document.createElement("div");
   menu.id = "theme-options";
   menu.className = "theme-menu-options dropdown-menu";
-  menu.setAttribute("role", "menu");
-  menu.setAttribute("aria-label", "外观");
   const items = modes.map((mode) => {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "theme-menu-item dropdown-item";
     item.setAttribute("role", "menuitemradio");
-    item.tabIndex = -1;
     const label = document.createElement("span");
     label.textContent = mode.label;
     const check = icon(["M5 12l4 4L19 6"]);
@@ -48,8 +39,6 @@ export function setupThemeMenu() {
     item.append(icon(mode.paths), label, check);
     item.addEventListener("click", () => {
       document.dispatchEvent(new CustomEvent("theme-preference-change", { detail: mode.value }));
-      closeMenus();
-      trigger.focus();
     });
     menu.append(item);
     return item;
@@ -63,42 +52,7 @@ export function setupThemeMenu() {
     setTooltip(trigger, `外观：${mode.label}`);
     items.forEach((item, index) => item.setAttribute("aria-checked", String(index === selected)));
   }
-  function open(index) {
-    closeMenus();
-    trigger.setAttribute("aria-expanded", "true");
-    items[index].focus();
-  }
-  trigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    if (trigger.getAttribute("aria-expanded") === "true") closeMenus();
-    else open(items.findIndex((item) => item.getAttribute("aria-checked") === "true"));
-  });
-  trigger.addEventListener("keydown", (event) => {
-    if (!["ArrowDown", "ArrowUp"].includes(event.key)) return;
-    event.preventDefault();
-    open(event.key === "ArrowUp" ? items.length - 1 : 0);
-  });
-  menu.addEventListener("keydown", (event) => {
-    const index = items.indexOf(document.activeElement);
-    if (event.key === "Escape") {
-      event.preventDefault();
-      event.stopPropagation();
-      closeMenus();
-      trigger.focus();
-    } else if (event.key === "Tab") {
-      closeMenus();
-      trigger.focus();
-    } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-      event.preventDefault();
-      const next = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1
-        : (index + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
-      items[next].focus();
-    }
-  });
-  container.addEventListener("focusout", (event) => {
-    if (!container.contains(event.relatedTarget)) trigger.setAttribute("aria-expanded", "false");
-  });
-  container.append(trigger, menu);
+  setupPopupMenu(container, trigger, menu, "外观", { focusCheckedOnClick: true });
   document.addEventListener("theme-change", update);
   update();
 }

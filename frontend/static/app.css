@@ -257,8 +257,12 @@ button:disabled {
 .pill.interactive {
   cursor: pointer;
 }
-.pill.interactive:hover {
+.pill.interactive:enabled:hover {
   border-color: var(--color-accent);
+}
+.pill.interactive:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 .pill.plan-expiration[data-auto-renew="true"] {
   color: var(--color-success);
@@ -353,7 +357,7 @@ button:disabled {
   --tblr-btn-color: var(--color-danger);
 }
 
-/* Preserve the existing menu state and keyboard handlers; no Tabler JS is needed. */
+/* popup-menu.js controls visibility through the trigger's aria-expanded state. */
 .add-menu,
 .account-action-menu,
 .theme-menu {

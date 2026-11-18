@@ -18,7 +18,7 @@ Codex 账号，提供浏览器管理页面，用于登录添加账号、导入�
 
 ## 功能概览
 
-- 本地 Web 管理页，无需单独前端 dev server。
+- 本地 Web 管理页以 Tabler 为主要 UI 样式基础，由 Go 服务直接提供静态资源，无需单独启动前端开发服务器。详见[前端说明](frontend/README.md)。
 - 支持 Codex browser 登录添加、选择 `auth.json` 文件导入、粘贴 JSON 内容导入。
 - 支持刷新账号额度、消费 reset credit 重置额度、手工设置自动续期和续期／到期日期、激活账号和删除账号。
 - 每个账号使用独立凭据目录，激活时才替换当前 `CODEX_HOME/auth.json`。

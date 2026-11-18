@@ -1,5 +1,13 @@
 const successCode = "SUCCESS";
 
+export function providerApiPath(providerId) {
+  return `/api/providers/${encodeURIComponent(providerId)}`;
+}
+
+export function accountApiPath(account) {
+  return `${providerApiPath(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}`;
+}
+
 export async function api(path, options) {
   const init = {
     method: options.method,

@@ -1,8 +1,9 @@
-import { setupThemeMenu } from "./components/theme-menu.js?v=tabler-1";
-import { api, getErrorMessage } from "./api.js?v=reauthentication-required";
-import { closeMenus } from "./components/add-menu.js?v=tabler-1";
+import { accountApiPath, api, providerApiPath } from "./api.js?v=frontend-cleanup-1";
+import { closeMenus } from "./components/popup-menu.js?v=frontend-cleanup-1";
+import { createStatusMessage } from "./components/status-message.js?v=frontend-cleanup-1";
+import { setupThemeMenu } from "./components/theme-menu.js?v=frontend-cleanup-1";
 import { emptyState } from "./components/common.js?v=tabler-1";
-import { providerSection } from "./components/provider-section.js?v=tabler-1";
+import { providerSection } from "./components/provider-section.js?v=frontend-cleanup-1";
 import { copyTextFrom } from "./clipboard.js?v=copy-auth-json";
 import { usageResetConfirmationDetail, usageResetCredits } from "./components/usage-limit.js?v=tabler-1";
 import {
@@ -12,23 +13,18 @@ import {
   promptPlanDialog,
   promptTextDialog,
 } from "./dialogs.js?v=tabler-1";
-import {
-  delay,
-  formatDateInput,
-} from "./formatters.js?v=single-plan-date";
+import { formatDateInput } from "./formatters.js?v=single-plan-date";
+import { loginTaskMessage, pollLoginTask, requestLoginTask } from "./login-tasks.js?v=frontend-cleanup-1";
 import { hideTooltip, setupTooltips } from "./tooltip.js?v=tooltip-position";
 
 const state = {
   providers: [],
   accounts: [],
-  loginTasks: new Map(),
   refreshingAccountKeys: new Set(),
   resettingAccountKeys: new Set(),
   loading: false,
 };
 
-const messageAutoHideMs = 4200;
-const errorMessageAutoHideMs = 7000;
 const codexReloginErrorCodes = new Set([
   "REAUTHENTICATION_REQUIRED",
   "token_expired",
@@ -38,17 +34,20 @@ const codexReloginErrorCodes = new Set([
   "refresh_token_reused",
   "refresh_token_invalidated",
 ]);
-let messageHideTimer = 0;
+const pendingActions = new Set();
+let accountListRequest = 0;
+let appliedAccountListRequest = 0;
 
 const elements = {
-  message: document.querySelector("#message"),
+  themeMenu: document.querySelector("#theme-menu"),
   providers: document.querySelector("#providers"),
 };
+const { show: showMessage, hide: hideMessage } = createStatusMessage(document.querySelector("#message"));
 
 boot();
 
 async function boot() {
-  setupThemeMenu();
+  setupThemeMenu(elements.themeMenu);
   setupGlobalEvents();
   try {
     await loadData();
@@ -69,18 +68,21 @@ function setupGlobalEvents() {
 }
 
 async function loadData() {
-  setLoading(true);
-  try {
+  const request = ++accountListRequest;
+  await withLoading(async () => {
     const [providers, accounts] = await Promise.all([
       api("/api/providers", { method: "GET" }),
       api("/api/accounts", { method: "GET" }),
     ]);
+    // A background login can reload the list alongside an account action.
+    if (request < appliedAccountListRequest) {
+      return;
+    }
+    appliedAccountListRequest = request;
     state.providers = providers;
     state.accounts = accounts;
     render();
-  } finally {
-    setLoading(false);
-  }
+  });
 }
 
 async function importProviderAuthJSON(providerId) {
@@ -108,7 +110,7 @@ async function importProviderAuthJSONFile(providerId) {
 
 async function submitProviderAuthJSON(providerId, authJson) {
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(providerId)}/accounts/auth-json/import`, {
+    await api(`${providerApiPath(providerId)}/accounts/auth-json/import`, {
       method: "POST",
       body: { authJson },
     });
@@ -118,68 +120,58 @@ async function submitProviderAuthJSON(providerId, authJson) {
 }
 
 async function createLoginTask(providerId, expectedEmail = "") {
-  setLoading(true);
   try {
-    const body = { mode: "browser" };
-    if (expectedEmail) {
-      body.expectedEmail = expectedEmail;
-    }
-    const task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/create`, {
-      method: "POST",
-      body,
-    });
-    state.loginTasks.set(task.taskId, task);
+    const task = await withLoading(() => requestLoginTask(providerId, expectedEmail));
     showLoginTaskMessage(task);
-    pollLoginTask(providerId, task.taskId);
+    void finishLoginTask(providerId, task);
   } catch (error) {
     showMessage(error.message || "创建登录任务失败", true);
-  } finally {
-    setLoading(false);
   }
 }
 
-async function pollLoginTask(providerId, taskId) {
-  for (;;) {
-    await delay(1500);
-    let task;
-    try {
-      task = await api(`/api/providers/${encodeURIComponent(providerId)}/login-tasks/${encodeURIComponent(taskId)}`, {
-        method: "GET",
-        allowDataErrorCode: true,
-      });
-    } catch (error) {
-      showMessage(error.message || "查询登录任务失败", true);
-      return;
-    }
-    state.loginTasks.set(task.taskId, task);
-    showLoginTaskMessage(task);
-    if (task.status === "imported") {
-      await loadData();
-      const account = task.account
-        ? state.accounts.find((item) => item.providerId === providerId && item.accountId === task.account.accountId)
-        : null;
-      if (account) {
-        await refreshAccount(account, { promptRelogin: false });
-      }
-      return;
-    }
-    if (["failed", "cancelled", "expired"].includes(task.status)) {
-      return;
-    }
+async function finishLoginTask(providerId, initialTask) {
+  let task;
+  try {
+    task = await pollLoginTask(providerId, initialTask, showLoginTaskMessage);
+  } catch (error) {
+    showMessage(error.message || "查询登录任务失败", true);
+    return;
   }
+  if (task.status !== "imported") {
+    return;
+  }
+  try {
+    await loadData();
+    while (pendingActions.size > 0) {
+      await Promise.all(pendingActions);
+    }
+    const account = state.accounts.find((item) => (
+      item.providerId === providerId && item.accountId === task.account?.accountId
+    ));
+    if (account) {
+      await refreshAccount(account, { promptRelogin: false });
+    }
+  } catch (error) {
+    showMessage(error.message || "登录完成后刷新账号列表失败", true);
+  }
+}
+
+function showLoginTaskMessage(task) {
+  const { text, isError } = loginTaskMessage(task);
+  showMessage(text, isError);
 }
 
 async function refreshAccount(account, options = {}) {
   const promptRelogin = options.promptRelogin !== false;
   const key = accountKey(account);
-  if (state.loading || state.refreshingAccountKeys.has(key)) {
+  if (isAccountBusy(key)) {
     return;
   }
 
   state.refreshingAccountKeys.add(key);
   render();
   try {
-    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/refresh`, {
+    const result = await api(`${accountApiPath(account)}/refresh`, {
       method: "POST",
       body: {},
     });
@@ -201,12 +193,12 @@ async function refreshAccount(account, options = {}) {
 
 async function copyAccountAuthJSON(account) {
   const key = accountKey(account);
-  if (state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key)) {
+  if (isAccountBusy(key)) {
     return;
   }
   await runAction(async () => {
     await copyTextFrom(async () => {
-      const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/auth-json/export`, {
+      const result = await api(`${accountApiPath(account)}/auth-json/export`, {
         method: "POST",
         body: {},
       });
@@ -221,7 +213,7 @@ async function copyAccountAuthJSON(account) {
 
 async function resetAccountRateLimit(account) {
   const key = accountKey(account);
-  if (state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key)) {
+  if (isAccountBusy(key)) {
     return;
   }
   const resetCredits = usageResetCredits(account.usage);
@@ -237,7 +229,7 @@ async function resetAccountRateLimit(account) {
   state.resettingAccountKeys.add(key);
   render();
   try {
-    const result = await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/rate-limit/reset`, {
+    const result = await api(`${accountApiPath(account)}/rate-limit/reset`, {
       method: "POST",
       body: { idempotencyKey: crypto.randomUUID() },
     });
@@ -295,7 +287,7 @@ async function updatePlan(account) {
   }
   const planDate = input.date ? new Date(`${input.date}T00:00:00`).getTime() : null;
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/plan/update`, {
+    await api(`${accountApiPath(account)}/plan/update`, {
       method: "POST",
       body: { planAutoRenew: input.planAutoRenew, planDate },
     });
@@ -314,7 +306,7 @@ async function activateAccount(account) {
     return;
   }
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}/activate`, {
+    await api(`${accountApiPath(account)}/activate`, {
       method: "POST",
       body: {},
     });
@@ -334,7 +326,7 @@ async function deleteAccount(account) {
     return;
   }
   await runAction(async () => {
-    await api(`/api/providers/${encodeURIComponent(account.providerId)}/accounts/${encodeURIComponent(account.accountId)}`, {
+    await api(accountApiPath(account), {
       method: "DELETE",
     });
     showMessage("账号已删除");
@@ -343,13 +335,38 @@ async function deleteAccount(account) {
 }
 
 async function runAction(action) {
-  setLoading(true);
   try {
-    await action();
+    await withLoading(action);
   } catch (error) {
     showMessage(error.message || "操作失败", true);
+  }
+}
+
+async function withLoading(action) {
+  let markFinished;
+  const finished = new Promise((resolve) => {
+    markFinished = resolve;
+  });
+  pendingActions.add(finished);
+  setLoading(true);
+  try {
+    return await action();
   } finally {
-    setLoading(false);
+    pendingActions.delete(finished);
+    setLoading(pendingActions.size > 0);
+    markFinished();
+  }
+}
+
+function setLoading(loading) {
+  if (loading === state.loading) {
+    return;
+  }
+  state.loading = loading;
+  for (const container of [elements.providers, elements.themeMenu]) {
+    container.querySelectorAll("button").forEach((button) => {
+      button.disabled = loading || button.dataset.disabledWhenIdle === "true";
+    });
   }
 }
 
@@ -385,84 +402,24 @@ function render() {
   }
 }
 
-function showMessage(text, isError = false, options = {}) {
-  clearMessageTimer();
-  elements.message.hidden = false;
-  elements.message.textContent = text;
-  elements.message.classList.toggle("error", isError);
-  const timeoutMs = options.timeoutMs ?? (isError ? errorMessageAutoHideMs : messageAutoHideMs);
-  if (timeoutMs > 0) {
-    messageHideTimer = window.setTimeout(hideMessage, timeoutMs);
-  }
-}
-
-function hideMessage() {
-  clearMessageTimer();
-  elements.message.hidden = true;
-  elements.message.textContent = "";
-  elements.message.classList.remove("error");
-}
-
-function clearMessageTimer() {
-  if (messageHideTimer) {
-    window.clearTimeout(messageHideTimer);
-    messageHideTimer = 0;
-  }
-}
-
-function showLoginTaskMessage(task) {
-  if (task.status === "waiting_for_user") {
-    if (task.userCode) {
-      showMessage(`请打开登录页并输入 device code：${task.userCode}`);
-      return;
-    }
-    showMessage("请在浏览器完成 Codex 登录。");
-    return;
-  }
-  if (task.status === "verifying") {
-    showMessage("正在校验 Codex 登录账号。");
-    return;
-  }
-  if (task.status === "imported") {
-    const label = task.account && (task.account.email || task.account.label || task.account.accountId);
-    showMessage(`账号已导入：${label || task.taskId}`);
-    return;
-  }
-  if (task.status === "failed" || task.status === "expired") {
-    showMessage(task.errorMessage || getErrorMessage(task.errorCode), true);
-    return;
-  }
-  if (task.status === "cancelled") {
-    showMessage("登录任务已取消", true);
-    return;
-  }
-  showMessage("Codex 登录任务已创建。");
-}
-
-function setLoading(loading) {
-  state.loading = loading;
-  document.querySelectorAll("button").forEach((btn) => {
-    btn.disabled = loading || btn.dataset.disabledWhenIdle === "true";
-  });
-}
-
 function replaceAccount(updatedAccount) {
   const index = state.accounts.findIndex((account) => accountKey(account) === accountKey(updatedAccount));
   if (index === -1) {
     return;
   }
-  state.accounts = state.accounts.map((account, accountIndex) => (accountIndex === index ? updatedAccount : account));
+  state.accounts[index] = updatedAccount;
 }
 
 function accountState(account) {
+  const key = accountKey(account);
   return {
-    isRefreshing: isAccountRefreshing(account),
-    isResetting: state.resettingAccountKeys.has(accountKey(account)),
+    isRefreshing: state.refreshingAccountKeys.has(key),
+    isResetting: state.resettingAccountKeys.has(key),
   };
 }
 
-function isAccountRefreshing(account) {
-  return state.refreshingAccountKeys.has(accountKey(account));
+function isAccountBusy(key) {
+  return state.loading || state.refreshingAccountKeys.has(key) || state.resettingAccountKeys.has(key);
 }
 
 function accountKey(account) {

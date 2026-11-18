@@ -1,5 +1,5 @@
-import { accountCard } from "./account-card.js?v=tabler-1";
-import { providerActions } from "./add-menu.js?v=tabler-1";
+import { accountCard } from "./account-card.js?v=frontend-cleanup-1";
+import { providerActions } from "./add-menu.js?v=frontend-cleanup-1";
 import { emptyState } from "./common.js?v=tabler-1";
 
 export function providerSection({ providerInfo, accounts, loading, accountState, actions }) {
