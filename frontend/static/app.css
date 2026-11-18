@@ -117,44 +117,10 @@ button:disabled {
   content: "↗";
 }
 
-.workspace-heading {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding-block: 32px;
-}
-.workspace-heading .page-pretitle {
-  margin-bottom: 6px;
-  letter-spacing: 0.12em;
-}
-.workspace-heading .page-title {
-  font-size: 26px;
-}
-.workspace-description {
-  margin: 10px 0 0;
-  color: var(--color-text-muted);
-  line-height: 1.6;
-}
-.workspace-local {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  flex: 0 0 auto;
-  padding: 7px 11px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--tblr-border-radius);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: 12px;
-}
-.workspace-local .status-dot {
-  width: 6px;
-  height: 6px;
-}
 .provider-list {
   display: grid;
   gap: 32px;
+  margin-block-start: 24px;
 }
 .provider-section {
   min-width: 0;
@@ -855,20 +821,8 @@ button:disabled {
   .topbar-actions {
     margin-left: auto;
   }
-  .workspace-heading {
-    padding-block: 24px;
-    align-items: flex-start;
-  }
-  .workspace-heading .page-title {
-    font-size: 23px;
-  }
-  .workspace-description {
-    max-width: 240px;
-    font-size: 12px;
-  }
-  .workspace-local {
-    padding: 6px 8px;
-    font-size: 11px;
+  .provider-list {
+    margin-block-start: 20px;
   }
   .account-grid {
     grid-template-columns: 1fr;
@@ -889,13 +843,6 @@ button:disabled {
 }
 
 @media (max-width: 380px) {
-  .workspace-heading {
-    flex-direction: column;
-    gap: 12px;
-  }
-  .workspace-description {
-    max-width: none;
-  }
   .provider-heading {
     gap: 6px;
   }
