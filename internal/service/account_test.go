@@ -30,6 +30,48 @@ func TestNormalizeUsageSnapshotConvertsResetsAtSecondsToMillis(t *testing.T) {
 	}
 }
 
+func TestAccountServiceHandlesEmptyProviderResults(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.Open(ctx, database.Config{Path: filepath.Join(t.TempDir(), "state.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	daos := dao.NewDAOs(db.GORM())
+	account := entity.Account{ProviderID: "codex", AccountID: "empty-response", StorageID: "empty-response", Label: "test"}
+	if err := daos.Accounts.Create(ctx, account); err != nil {
+		t.Fatal(err)
+	}
+	registry := provider.NewRegistry()
+	if err := registry.Register(ctx, emptyAccountProvider{Provider: fake.New(fake.Config{ID: "codex"})}); err != nil {
+		t.Fatal(err)
+	}
+	accounts := NewAccountService(dao.NewUnitOfWork(db.GORM()), daos, registry, NewAccountActivationCoordinator())
+	if _, err := accounts.ImportCurrentAccount(ctx, account.ProviderID); !isAppErrorCode(err, entity.ErrorCodeUnavailable) {
+		t.Fatalf("import returned %v, want UNAVAILABLE", err)
+	}
+	result, err := accounts.RefreshAccount(ctx, account.ProviderID, account.AccountID)
+	if err != nil || result.Account != nil || result.ErrorCode == nil || *result.ErrorCode != string(entity.ErrorCodeUnavailable) {
+		t.Fatalf("refresh returned %+v, %v, want UNAVAILABLE result", result, err)
+	}
+	snapshot, err := daos.UsageSnapshots.Get(ctx, account.ProviderID, account.AccountID)
+	if err != nil || snapshot.Status != entity.UsageStatusUnavailable {
+		t.Fatalf("stored snapshot = %+v, %v, want unavailable status", snapshot, err)
+	}
+}
+
+type emptyAccountProvider struct {
+	provider.Provider
+}
+
+func (emptyAccountProvider) ImportCurrentAccount(context.Context) (*entity.Account, error) {
+	return nil, nil
+}
+
+func (emptyAccountProvider) RefreshAccount(context.Context, entity.Account) (*entity.UsageSnapshot, error) {
+	return nil, nil
+}
+
 func TestDeleteAccountKeepsRecordWhenCredentialCleanupFails(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.Open(ctx, database.Config{Path: filepath.Join(t.TempDir(), "state.db")})

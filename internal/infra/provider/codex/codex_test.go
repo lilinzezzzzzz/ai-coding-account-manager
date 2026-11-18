@@ -408,6 +408,38 @@ func TestProviderImportsAuthJSONAndRefreshesAccount(t *testing.T) {
 	}
 }
 
+func TestProviderDoesNotSaveCredentialsWhenAppServerCloseFails(t *testing.T) {
+	root := t.TempDir()
+	store := newTestStore(t, root, filepath.Join(root, "active"))
+	closeErr := errors.New("app-server did not exit cleanly")
+	client := &fakeCodexClient{
+		responses: map[string]any{
+			"account/read": accountReadResponse{Account: &codexAccount{Type: "chatgpt", Email: "example@example.com"}},
+		},
+		closeErr: closeErr,
+	}
+	var runtimeDir string
+	codexProvider := newTestProvider(t, store, func(_ context.Context, cfg appserver.Config) (appServerClient, error) {
+		runtimeDir = cfg.CodexHome
+		return client, nil
+	})
+	account, snapshot, err := codexProvider.ImportAccountAuthJSONAndRefresh(t.Context(), []byte(`{"tokens":{"access_token":"test-value"}}`))
+	if !errors.Is(err, closeErr) || account != nil || snapshot != nil {
+		t.Fatalf("import returned an unexpected result: account present=%t, snapshot present=%t, error=%v", account != nil, snapshot != nil, err)
+	}
+	if client.closeCalls != 1 {
+		t.Fatalf("app-server close calls = %d, want 1", client.closeCalls)
+	}
+	if _, err := os.Stat(runtimeDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("temporary CODEX_HOME still present or inaccessible: %v", err)
+	}
+	accountID := entity.AccountIDFromEmail("example@example.com")
+	storageID := entity.StorageIDForAccount(providerID, accountID)
+	if _, err := store.ReadAccountAuthJSON(t.Context(), providerID, storageID); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("credentials were saved or inaccessible: %v", err)
+	}
+}
+
 func TestProviderAcceptsAccountWhenOpenAIAuthStillRequired(t *testing.T) {
 	account, err := mapAccount(accountReadResponse{
 		Account: &codexAccount{
@@ -466,7 +498,8 @@ type fakeCodexClient struct {
 	responses         map[string]any
 	responseSequences map[string][]any
 	calls             []fakeCodexCall
-	closed            bool
+	closeCalls        int
+	closeErr          error
 }
 
 type fakeCodexCall struct {
@@ -497,8 +530,8 @@ func copyCodexResponse(response any, result any) error {
 }
 
 func (client *fakeCodexClient) Close(context.Context) error {
-	client.closed = true
-	return nil
+	client.closeCalls++
+	return client.closeErr
 }
 
 func (client *fakeCodexClient) assertAccountReadRefreshToken(t *testing.T, want bool) {
